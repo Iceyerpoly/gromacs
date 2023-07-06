@@ -44,6 +44,10 @@ if (GMX_CP2K)
 gmx_add_libgromacs_sources(
     qmmmforceprovider.cpp
     )
+elseif(GMX_PYSCF)
+gmx_add_libgromacs_sources(
+    qmmmforceprovider_pyscf.cpp
+    )
 else()
 gmx_add_libgromacs_sources(
     qmmmforceprovider_stub.cpp
