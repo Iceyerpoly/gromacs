@@ -210,9 +210,6 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
     else
     {
         // If we have thread-MPI or no-MPI then we should initialize CP2P differently
-        if (cr.nnodes > 1)
-        {
-        }
     }
 
     // Run PySCF calculation
