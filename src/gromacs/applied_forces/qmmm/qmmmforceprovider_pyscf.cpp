@@ -125,10 +125,10 @@ void QMMMForceProvider::appendLog(const std::string& msg)
     GMX_LOG(logger_.info).asParagraph().appendText(msg);
 }
 
-void QMMMForceProvider::initPyscfForceEnvironment(const t_commrec& cr)
-{
-
-} // namespace gmx
+//void QMMMForceProvider::initPyscfForceEnvironment(const t_commrec& cr)
+//{
+//
+//} // namespace gmx
 
 void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceProviderOutput* fOutput)
 {
