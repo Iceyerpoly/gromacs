@@ -57,7 +57,7 @@
 #include "gromacs/utility/stringutil.h"
 
 // debug, delete later TODO
-#include <iostream>
+#include <cstdio>
 
 namespace gmx
 {
@@ -194,7 +194,7 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
         box_d[3 * i + 2] = static_cast<double>(box_[2][i] / c_bohr2Nm);
     }
 
-    std::cout << "test!!!" << std::endl;
+    fprintf(stderr, "test!!!\n");
 
     // NOTE: need to handle MPI
     // Update coordinates and box in PySCF
