@@ -194,7 +194,7 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
         box_d[3 * i + 2] = static_cast<double>(box_[2][i] / c_bohr2Nm);
     }
 
-    std::cout << "test!!!" << std:endl;
+    std::cout << "test!!!" << std::endl;
 
     // NOTE: need to handle MPI
     // Update coordinates and box in PySCF
