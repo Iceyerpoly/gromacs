@@ -96,6 +96,7 @@ private:
      * \param[in] cr connection record structure
      */
     void initCP2KForceEnvironment(const t_commrec& cr);
+    void forceRecorder(ForceProviderOutput* fOutput, std::vector<double> pyscfForce, const ForceProviderInput& fInput);
 
     const QMMMParameters& parameters_;
     const LocalAtomSet&   qmAtoms_;
