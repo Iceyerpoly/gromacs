@@ -169,14 +169,14 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
     PyObject* pPDBname = PyUnicode_FromString(pdb_name.c_str());
 
     // import mymodule
-    PyObject* pName = NULL;
-    pName = PyUnicode_FromString(module_name.c_str());
-    if (pName != NULL)
-    {
-        fprintf(stderr, "pName is not NULL\n");
-    } else {
-        fprintf(stderr, "pName IS NULL\n");
-    }
+    // PyObject* pName = NULL;
+    // pName = PyUnicode_FromString(module_name.c_str());
+    // if (pName != NULL)
+    // {
+    //     fprintf(stderr, "pName is not NULL\n");
+    // } else {
+    //     fprintf(stderr, "pName IS NULL\n");
+    // }
     PyObject* pModule = NULL;
     // pModule = PyImport_Import(pName);
     pModule = PyImport_ImportModule(module_name.c_str());
@@ -254,6 +254,7 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
             mm_force[i*3+j] = npyMMForce_cast[i * npyMMForce_columns + j];
         }
     }
+    fprintf(stderr, "qm_num: %d, mm_num: %d\nqm_coordDIM: %d, mm_coordDIM: %d, \nnumAtoms: %d\n", qm_num, mm_num, qm_coordDIM, mm_coordDIM, static_cast<int>(numAtoms));
 
     // Fill cordinates of local QM atoms and add translation
     for (size_t i = 0; i < qmAtoms_.numAtomsLocal(); i++)
@@ -277,7 +278,7 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
 
     // Put all atoms into the central box (they might be shifted out of it because of the translation)
     put_atoms_in_box(pbcType_, fInput.box_, ArrayRef<RVec>(x));
-    fprintf(stderr, "qm_num: %d, mm_num: %d\n qm_coordDIM: %d, mm_coordDIM: %d, \nnumAtoms: %d\n", qm_num, mm_num, qm_coordDIM, mm_coordDIM, static_cast<int>(numAtoms));
+
 
     /*
      * 2) Cast data to double format of libpython
@@ -384,24 +385,26 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
 
     forceRecorder(fOutput, pyscfForce, fInput);
 
-    Py_XDECREF(pFunc);
-    Py_XDECREF(pModule);
-    Py_XDECREF(pQMBasis);
-    Py_XDECREF(pQMMult);
-    Py_XDECREF(pysfcReturn);
-    Py_XDECREF(pQMCharge);
-    Py_XDECREF(pQMMMEnergy);
-    Py_XDECREF(pQMForce);
-    Py_XDECREF(pMMForce);
-    Py_XDECREF(npyQMForce);
-    Py_XDECREF(npyQMForce_rows);
-    Py_XDECREF(npyQMForce_columns);
-    Py_XDECREF(npyMMForce);
-    Py_XDECREF(npyMMForce_rows);
-    Py_XDECREF(npyMMForce_columns);
-
-    Py_Finalize();
-    fprintf(stderr, "test!!!\n");
+    // Py_XDECREF(pFunc);
+    // Py_XDECREF(pModule);
+    // Py_XDECREF(pPDBname);
+    // Py_XDECREF(pQMBasis);
+    // Py_XDECREF(pQMMult);
+    // Py_XDECREF(pysfcReturn);
+    // Py_XDECREF(pQMCharge);
+    // Py_XDECREF(pQMMMEnergy);
+    // Py_XDECREF(pQMForce);
+    // Py_XDECREF(pMMForce);
+    fprintf(stderr, "test1!!!\n");
+    // Py_XDECREF(npyQMForce);
+    // Py_XDECREF(npyQMForce_rows);
+    // Py_XDECREF(npyQMForce_columns);
+    // Py_XDECREF(npyMMForce);
+    // Py_XDECREF(npyMMForce_rows);
+    // Py_XDECREF(npyMMForce_columns);
+    fprintf(stderr, "test2!!!\n");
+    Py_FinalizeEx();
+    fprintf(stderr, "test3!!!\n");
 
 };
 
