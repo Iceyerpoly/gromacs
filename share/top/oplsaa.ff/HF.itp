@@ -1,0 +1,16 @@
+;
+; KLUDGED to test HF-HOH QMMM system
+;
+
+[ moleculetype ]
+; molname	nrexcl
+HFL		3
+
+[ atoms ]
+; id	at type	res nr 	residu name	at name		cg nr	charge
+1     opls_800  1       HFL             FL             1       -0.407
+2     opls_801  1       HFL             HL             1        0.407
+
+[ bonds ]
+; i	j	funct	length	force.c.
+1	2	1	0.0947	502416.0

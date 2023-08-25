@@ -48,6 +48,8 @@
 #include "gromacs/pbcutil/pbc.h"
 #include "gromacs/utility/classhelpers.h"
 #include "gromacs/utility/logger.h"
+#include <Python.h>
+#include "numpy/arrayobject.h"
 
 #include "qmmmtypes.h"
 

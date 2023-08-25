@@ -49,6 +49,9 @@
 #include <memory>
 #include <numeric>
 
+// #include "gromacs/applied_forces/qmmm/qmmmforceprovider.h"
+#include <Python.h>
+#include "numpy/arrayobject.h"
 #include "gromacs/applied_forces/awh/awh.h"
 #include "gromacs/applied_forces/awh/read_params.h"
 #include "gromacs/commandline/filenm.h"
@@ -846,6 +849,9 @@ void gmx::LegacySimulator::do_md()
     bool usedMdGpuGraphLastStep = false;
     /* and stop now if we should */
     bLastStep = (bLastStep || (ir->nsteps >= 0 && step_rel > ir->nsteps));
+    Py_Initialize();
+    _import_array();
+
     while (!bLastStep)
     {
 
@@ -2111,7 +2117,7 @@ void gmx::LegacySimulator::do_md()
         }
     }
     /* End of main MD loop */
-
+    Py_Finalize();
     /* Closing TNG files can include compressing data. Therefore it is good to do that
      * before stopping the time measurements. */
     mdoutf_tng_close(outf);

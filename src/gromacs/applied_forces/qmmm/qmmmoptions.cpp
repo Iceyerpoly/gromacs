@@ -65,6 +65,7 @@
 
 #include "qmmminputgenerator.h"
 #include "qmmmtopologypreprocessor.h"
+#include <iostream>
 
 namespace gmx
 {
@@ -482,7 +483,7 @@ void QMMMOptions::processCoordinates(const CoordinatesAndBoxPreprocessed& coord)
 
     // Generate pdb file with point charges for CP2K
     parameters_.qmPdb_ = inpGen.generateCP2KPdb();
-
+    std::cout << parameters_.qmPdb_ << std::endl;
     // In case parameters_.qmMethod_ != INPUT we should generate CP2K Input, QM box and translation
     if (parameters_.qmMethod_ != QMMMQMMethod::INPUT)
     {
