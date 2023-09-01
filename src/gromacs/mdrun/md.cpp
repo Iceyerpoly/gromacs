@@ -48,9 +48,16 @@
 #include <algorithm>
 #include <memory>
 #include <numeric>
-
-// #include "gromacs/applied_forces/qmmm/qmmmforceprovider.h"
+#define PY_SSIZE_T_CLEAN
 #include <Python.h>
+#include "numpy/arrayobject.h"
+
+
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <iomanip>
+#include "gromacs/applied_forces/qmmm/qmmmforceprovider.h"
 #include "numpy/arrayobject.h"
 #include "gromacs/applied_forces/awh/awh.h"
 #include "gromacs/applied_forces/awh/read_params.h"
