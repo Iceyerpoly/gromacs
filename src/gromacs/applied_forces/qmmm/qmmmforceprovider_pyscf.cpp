@@ -41,8 +41,8 @@
  */
 
 #include <Python.h>
-#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
-#include "numpy/arrayobject.h"
+//#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
+//#include "numpy/arrayobject.h"
 
 #include "gmxpre.h"
 
@@ -112,12 +112,23 @@ void QMMMForceProvider::appendLog(const std::string& msg)
 void QMMMForceProvider::initPython(const t_commrec& cr)
 {
     Py_Initialize();
+    // import array fails outside valgrind because of long double errors
+    // Actually, with valgrind, you can see the warning:
+    //
+    // /home/user/miniconda3/lib/python3.10/site-packages/numpy/core/getlimits.py:542: UserWarning: Signature b'\x00\xd0\xcc\xcc\xcc\xcc\xcc\xcc\xfb\xbf\x00\x00\x00\x00\x00\x00' for <class 'numpy.longdouble'> does not match any known type: falling back to type probe function.
+    // This warnings indicates broken support for the dtype!
+    //
+    // This works fine with valgrind but directly causes a floating point
+    // exception when testing long double. Maybe we should just stick to
+    // python list.
+    /*
     import_array1(void(0));
     if (PyErr_Occurred()) {
         fprintf(stderr, "Failed to import numpy Python module(s).\n");
         return;
     }
     assert(PyArray_API);
+    */
 
     // Set flag of successful initialization
     isPythonInitialized_ = true;
@@ -259,6 +270,8 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
     qmmmEnergy = PyFloat_AsDouble(pQMMMEnergy);
     fprintf(stdout, "GROMACS received energy %f \n", qmmmEnergy);
 
+    // TODO: read list, instead of numpy array
+    /*
     PyArrayObject* npyQMForce = reinterpret_cast<PyArrayObject*>(pQMForce);
 
     npy_intp npyQMForce_rows = PyArray_DIM(npyQMForce, 0);
@@ -273,8 +286,6 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
             qm_force[i*3+j] = npyQMForce_cast[i * npyQMForce_columns + j];
         }
     }
-    // if (PyArray_Check(pMMForce)) {
-    // }
     PyArrayObject* npyMMForce = reinterpret_cast<PyArrayObject*>(pMMForce);
 
     npy_intp npyMMForce_rows = PyArray_DIM(npyMMForce, 0);
@@ -290,6 +301,7 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
             mm_force[i*3+j] = npyMMForce_cast[i * npyMMForce_columns + j];
         }
     }
+    */
     // fprintf(stdout, "qm_num: %d, mm_num: %d\nqm_coordDIM: %d, mm_coordDIM: %d\nnumAtoms: %d\n", qm_num, mm_num, qm_coordDIM, mm_coordDIM, static_cast<int>(numAtoms));
 
 
