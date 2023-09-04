@@ -49,8 +49,6 @@
 #include "gromacs/pbcutil/pbc.h"
 #include "gromacs/utility/classhelpers.h"
 #include "gromacs/utility/logger.h"
-#include <Python.h>
-#include "numpy/arrayobject.h"
 
 #include "qmmmtypes.h"
 
@@ -99,6 +97,7 @@ private:
      * \param[in] cr connection record structure
      */
     void initCP2KForceEnvironment(const t_commrec& cr);
+    void initPython(const t_commrec& cr);
     void forceRecorder(ForceProviderOutput* fOutput, std::vector<double> pyscfForce, const ForceProviderInput& fInput);
 
     const QMMMParameters& parameters_;
@@ -112,6 +111,9 @@ private:
 
     //! Flag wether initCP2KForceEnvironment() has been called already
     bool isCp2kLibraryInitialized_ = false;
+
+    //! Flag wether initPython() has been called already
+    bool isPythonInitialized_ = false;
 
     //! CP2K force environment handle
     force_env_t force_env_ = -1;

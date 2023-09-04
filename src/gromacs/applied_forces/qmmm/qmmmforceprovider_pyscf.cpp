@@ -40,13 +40,13 @@
  * \ingroup module_applied_forces
  */
 
+#include <Python.h>
+#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
+#include "numpy/arrayobject.h"
+
 #include "gmxpre.h"
 
 #include "qmmmforceprovider.h"
-
-#include "qmmminputgenerator.h"
-#include "qmmmoptions.h"
-#include "qmmmtopologypreprocessor.h"
 
 #include "gromacs/domdec/domdec_struct.h"
 #include "gromacs/gmxlib/network.h"
@@ -57,24 +57,6 @@
 #include "gromacs/utility/filestream.h"
 #include "gromacs/utility/stringutil.h"
 
-// #include "gromacs/fileio/warninp.h"
-
-// #include "gromacs/mdrunutility/mdmodulesnotifiers.h"
-// #include "gromacs/options/basicoptions.h"
-// #include "gromacs/options/optionsection.h"
-// #include "gromacs/selection/indexutil.h"
-// #include "gromacs/topology/mtop_lookup.h"
-// #include "gromacs/topology/mtop_util.h"
-// #include "gromacs/topology/topology.h"
-
-// #include "gromacs/utility/keyvaluetreebuilder.h"
-// #include "gromacs/utility/keyvaluetreetransform.h"
-// #include "gromacs/utility/logger.h"
-// #include "gromacs/utility/path.h"
-// #include "gromacs/utility/strconvert.h"
-
-// #include "gromacs/utility/textreader.h"
-
 // debug, delete later TODO
 #include <cstdio>
 #include <iostream>
@@ -82,26 +64,6 @@
 
 namespace gmx
 {
-
-namespace
-{
-
-/*! \brief Helper function that dumps string into the file.
- *
- * \param[in] filename Name of the file to write.
- * \param[in] str String to write into the file.
- * \throws    std::bad_alloc if out of memory.
- * \throws    FileIOError on any I/O error.
- */
-void writeStringToFile(const std::string& filename, const std::string& str)
-{
-
-    TextOutputFile fOut(filename);
-    fOut.write(str.c_str());
-    fOut.close();
-}
-
-} // namespace
 
 QMMMForceProvider::QMMMForceProvider(const QMMMParameters& parameters,
                                      const LocalAtomSet&   localQMAtomSet,
@@ -119,6 +81,7 @@ QMMMForceProvider::QMMMForceProvider(const QMMMParameters& parameters,
 
 QMMMForceProvider::~QMMMForceProvider()
 {
+    Py_Finalize();
     if (force_env_ != -1)
     {
         //cp2k_destroy_force_env(force_env_);
@@ -146,13 +109,30 @@ void QMMMForceProvider::appendLog(const std::string& msg)
     GMX_LOG(logger_.info).asParagraph().appendText(msg);
 }
 
-//void QMMMForceProvider::initPyscfForceEnvironment(const t_commrec& cr)
-//{
-//
-//} // namespace gmx
+void QMMMForceProvider::initPython(const t_commrec& cr)
+{
+    Py_Initialize();
+    import_array1(void(0));
+    if (PyErr_Occurred()) {
+        fprintf(stderr, "Failed to import numpy Python module(s).\n");
+        return;
+    }
+    assert(PyArray_API);
+
+    // Set flag of successful initialization
+    isPythonInitialized_ = true;
+} // namespace gmx
 
 void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceProviderOutput* fOutput)
 {
+    if (!isPythonInitialized_)
+    {
+        try
+        {
+            initPython(fInput.cr_);
+        }
+        GMX_CATCH_ALL_AND_EXIT_WITH_FATAL_ERROR;
+    }
     PyObject* pModule = PyImport_ImportModule("pyscfdriverii");
     // PyObject* pFunc = PyObject_GetAttrString(pModule, "QMcalculation");
     // PyObject* pFuncPrint = PyObject_GetAttrString(pModule, "printProp");
@@ -252,34 +232,13 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
     put_atoms_in_box(pbcType_, fInput.box_, ArrayRef<RVec>(x));
 
 
-    // Py_Initialize();
-    // _import_array();
     const std::string qm_basis = "ccpvdz";
-    // int qm_charge = 0, qm_mult = 1;
-    // const std::string module_name = "pyscfdriverii";
-    // const std::string func_name = "QMcalculation";
-    std::string pdb_name = parameters_.qmFileNameBase_ + "1.pdb";
 
     // TODO: fix for MPI version
-    // Write CP2K input if we are Main
-    // Write *.pdb with point charges for CP2K
-
-    QMMMInputGenerator updateGen(
-            parameters_, pbcType_, fInput.box_, fInput.chargeA_, fInput.x_);
-
-    // Generate pdb file with point charges for CP2K
-    std::string qmPdbUpdate = updateGen.generateCP2KPdb();
-    writeStringToFile(pdb_name, qmPdbUpdate);
 
     PyObject* pQMBasis = PyUnicode_FromString(qm_basis.c_str());
     PyObject* pQMMult = PyLong_FromLong(parameters_.qmMultiplicity_);
     PyObject* pQMCharge = PyLong_FromLong(parameters_.qmCharge_);
-
-    // PyObject* pPDBname = PyUnicode_FromString(pdb_name.c_str());
-
-    // PyObject* pyscfReturn = PyObject_CallFunctionObjArgs(pFunc,
-    //         pPDBname, pQMBasis, pQMMult, pQMCharge, NULL);
-    //parse the pyscfReturn into different parts
 
     PyObject* pyscfCalcReturn = PyObject_CallFunctionObjArgs(pFuncCalc,
             pQMBasis, pQMMult, pQMCharge,
