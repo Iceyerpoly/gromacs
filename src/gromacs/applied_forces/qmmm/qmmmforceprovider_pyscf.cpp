@@ -256,7 +256,7 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
             pyQMKinds, pyQMCoords, pyMMKinds,
             pyMMCharges, pyMMCoords, NULL);
     if (!pyscfCalcReturn){
-        fprintf(stdout, "pyscfCalcReturn IS NULL!!!\n");
+        fprintf(stderr, "pyscfCalcReturn IS nullptr!!!\n");
     }
 
     PyObject* pQMMMEnergy = PyTuple_GetItem(pyscfCalcReturn, 0);
@@ -267,8 +267,65 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
     // PyObject_CallFunctionObjArgs(pFuncPrint, pQMForce, NULL);
 
     double qmmmEnergy(0);
-    qmmmEnergy = PyFloat_AsDouble(pQMMMEnergy);
-    fprintf(stdout, "GROMACS received energy %f \n", qmmmEnergy);
+    if (pQMMMEnergy) {
+        qmmmEnergy = PyFloat_AsDouble(pQMMMEnergy);
+        fprintf(stderr, "GROMACS received energy %f \n", qmmmEnergy);
+    } else {
+        fprintf(stderr, "pointer to pyscf returned energy is nullptr\n");
+    }
+
+    double qmForce[numAtomsQM][3] = {};
+    if (pQMForce){
+        fprintf(stderr, "pointer to pyscf returned qm force is not nullptr\n");
+        size_t numQMForceRow = PyList_Size(pQMForce);
+        fprintf(stderr, "number of rows in pQMForce %ld\n", numQMForceRow);
+        for (size_t i = 0; i < numQMForceRow; i ++){
+            
+            PyObject* pQMForceRow = PyList_GetItem(pQMForce,i);
+
+            size_t numQMForceColum = PyList_Size(pQMForceRow);
+            fprintf(stderr, "%ld\n", numQMForceColum);
+
+            if (pQMForceRow) {
+                fprintf(stdout, "pQMForceRow is not nullptr\n");
+            } else {
+                fprintf(stdout, "pQMForceRow IS nullptr\n");
+            }
+            fprintf(stderr, "%f\n", PyFloat_AsDouble((PyList_GetItem(pQMForceRow,0))));
+            qmForce[i][0] = PyFloat_AsDouble((PyList_GetItem(pQMForceRow,0)));
+            qmForce[i][1] = PyFloat_AsDouble((PyList_GetItem(pQMForceRow,1)));
+            qmForce[i][2] = PyFloat_AsDouble((PyList_GetItem(pQMForceRow,2)));
+        }
+    } else{
+        fprintf(stderr, "pointer to pyscf returned qm force IS nullptr!!!\n");
+    }
+
+    double mmForce[numAtomsMM][3] = {};
+    if (pMMForce){
+        fprintf(stderr, "pointer to pyscf returned mm force is not nullptr\n");
+        size_t numMMForceRow = PyList_Size(pMMForce);
+        fprintf(stderr, "number of rows in pMMForce %ld\n", numMMForceRow);
+        for (size_t i = 0; i < numMMForceRow; i ++){
+            
+            PyObject* pMMForceRow = PyList_GetItem(pMMForce,i);
+
+            size_t numMMForceColum = PyList_Size(pMMForceRow);
+            fprintf(stderr, "%ld\n", numMMForceColum);
+
+            if (pMMForceRow) {
+                fprintf(stdout, "pMMForceRow is not nullptr\n");
+            } else {
+                fprintf(stdout, "pMMForceRow IS nullptr\n");
+            }
+            fprintf(stderr, "%f\n", PyFloat_AsDouble((PyList_GetItem(pMMForceRow,0))));
+            mmForce[i][0] = PyFloat_AsDouble((PyList_GetItem(pMMForceRow,0)));
+            mmForce[i][1] = PyFloat_AsDouble((PyList_GetItem(pMMForceRow,1)));
+            mmForce[i][2] = PyFloat_AsDouble((PyList_GetItem(pMMForceRow,2)));
+        }
+    } else{
+        fprintf(stderr, "pointer to pyscf returned mm force IS nullptr!!!\n");
+    }
+
 
     // TODO: read list, instead of numpy array
     /*
@@ -368,11 +425,11 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
     for (size_t i = 0; i < qmAtoms_.numAtomsLocal(); i++)
     {
         pyscfForce[3 * qmAtoms_.globalIndex()[qmAtoms_.collectiveIndex()[i]]]
-                     = qm_force[3 * qmAtoms_.collectiveIndex()[i]];
+                     = qmForce[qmAtoms_.collectiveIndex()[i]][0];
         pyscfForce[3 * qmAtoms_.globalIndex()[qmAtoms_.collectiveIndex()[i]] + 1]
-                     = qm_force[3 * qmAtoms_.collectiveIndex()[i] + 1];
+                     = qmForce[qmAtoms_.collectiveIndex()[i]][1];
         pyscfForce[3 * qmAtoms_.globalIndex()[qmAtoms_.collectiveIndex()[i]] + 2]
-                     = qm_force[3 * qmAtoms_.collectiveIndex()[i] + 2];
+                     = qmForce[qmAtoms_.collectiveIndex()[i]][2];
 
         fOutput->forceWithVirial_.force_[qmAtoms_.localIndex()[i]][XX] +=
                 static_cast<real>(pyscfForce[3 * qmAtoms_.globalIndex()[qmAtoms_.collectiveIndex()[i]]])
@@ -391,11 +448,11 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
     for (size_t i = 0; i < mmAtoms_.numAtomsLocal(); i++)
     {
         pyscfForce[3 * mmAtoms_.globalIndex()[mmAtoms_.collectiveIndex()[i]]]
-                     = mm_force[3 * mmAtoms_.collectiveIndex()[i]];
+                     = mmForce[mmAtoms_.collectiveIndex()[i]][0];
         pyscfForce[3 * mmAtoms_.globalIndex()[mmAtoms_.collectiveIndex()[i]] + 1]
-                     = mm_force[3 * mmAtoms_.collectiveIndex()[i] + 1];
+                     = mmForce[mmAtoms_.collectiveIndex()[i]][1];
         pyscfForce[3 * mmAtoms_.globalIndex()[mmAtoms_.collectiveIndex()[i]] + 2]
-                     = mm_force[3 * mmAtoms_.collectiveIndex()[i] + 2];
+                     = mmForce[mmAtoms_.collectiveIndex()[i]][2];
 
         fOutput->forceWithVirial_.force_[mmAtoms_.localIndex()[i]][XX] +=
                 static_cast<real>(pyscfForce[3 * mmAtoms_.globalIndex()[mmAtoms_.collectiveIndex()[i]]])

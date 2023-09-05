@@ -11,6 +11,7 @@ def qmmmCalc(qmbasis, qmmult, qmcharge, qmkinds, qmcoords, mmkinds, mmcharges, m
     for kind, coord in zip(qmkinds, qmcoords):
         qmatom_tmp = [kind] + coord
         qmatoms.append(qmatom_tmp)
+    # print(qmatoms)
 
     mmatmns = []
     mmradii = []
@@ -71,8 +72,9 @@ def qmmmCalc(qmbasis, qmmult, qmcharge, qmkinds, qmcoords, mmkinds, mmcharges, m
     mf_grad = itrf.mm_charge_grad(grad.RKS(mf), mmcoords, mmcharges, mmradii, unit='ANG')
     qmforce = -mf_grad.kernel()
     # print("qmforce", type(qmforce))
-    # print(qmforce)
-
+    qmforce_list = qmforce.tolist()
+    # print(qmforce_list)
+    
     mmforce_qmnuc = -mf_grad.grad_nuc_mm()
     mmforce_qme = -mf_grad.grad_hcore_mm(dm)
 
@@ -82,10 +84,12 @@ def qmmmCalc(qmbasis, qmmult, qmcharge, qmkinds, qmcoords, mmkinds, mmcharges, m
     # print(mmforce_qme)
 
     mmforce = numpy.add(mmforce_qmnuc,mmforce_qme)
+    mmforce_list = mmforce.tolist()
+    # print(mmforce_list)
     # print("mmforce", type(mmforce))
     # print(mmforce)
 
-    return energy, qmforce.tolist(), mmforce.tolist()
+    return energy, qmforce_list, mmforce_list
 
 def printProp(prop):
     print(prop)
