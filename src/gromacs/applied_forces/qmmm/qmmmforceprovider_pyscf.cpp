@@ -280,12 +280,21 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
         fprintf(stderr, "pointer to pyscf returned energy is nullptr\n");
     }
 
+    if (!pQMForce){
+        fprintf(stderr, "parsing pyscfCalcReturn error, pyobject pQMForce is nullptr\n");
+    }
+
+    if (!pMMForce){
+        fprintf(stderr, "parsing pyscfCalcReturn error, pyobject pMMForce is nullptr\n");
+    }
+
     PyArrayObject* npyQMForce = reinterpret_cast<PyArrayObject*>(pQMForce);
 
     npy_intp npyQMForce_rows = PyArray_DIM(npyQMForce, 0);
     npy_intp npyQMForce_columns = PyArray_DIM(npyQMForce, 1);
     int qm_num = static_cast<int>(npyQMForce_rows);
     int qm_coordDIM = static_cast<int>(npyQMForce_columns);
+    fprintf(stderr, "qm_num (%d), qm_coordDIM (%d), from taking the size of pyobject \n", qm_num, qm_coordDIM);
     double qmForce[qm_num*qm_coordDIM] = {};
     double* npyQMForce_cast = static_cast<double*>(PyArray_DATA(npyQMForce));
 
@@ -373,11 +382,11 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
     for (size_t i = 0; i < qmAtoms_.numAtomsLocal(); i++)
     {
         pyscfForce[3 * qmAtoms_.globalIndex()[qmAtoms_.collectiveIndex()[i]]]
-                     = qmForce[qmAtoms_.collectiveIndex()[i]][0];
+                     = qmForce[qmAtoms_.collectiveIndex()[i] * 3 + 0];
         pyscfForce[3 * qmAtoms_.globalIndex()[qmAtoms_.collectiveIndex()[i]] + 1]
-                     = qmForce[qmAtoms_.collectiveIndex()[i]][1];
+                     = qmForce[qmAtoms_.collectiveIndex()[i] * 3 + 1];
         pyscfForce[3 * qmAtoms_.globalIndex()[qmAtoms_.collectiveIndex()[i]] + 2]
-                     = qmForce[qmAtoms_.collectiveIndex()[i]][2];
+                     = qmForce[qmAtoms_.collectiveIndex()[i] * 3 + 2];
 
         fOutput->forceWithVirial_.force_[qmAtoms_.localIndex()[i]][XX] +=
                 static_cast<real>(pyscfForce[3 * qmAtoms_.globalIndex()[qmAtoms_.collectiveIndex()[i]]])
@@ -396,11 +405,11 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
     for (size_t i = 0; i < mmAtoms_.numAtomsLocal(); i++)
     {
         pyscfForce[3 * mmAtoms_.globalIndex()[mmAtoms_.collectiveIndex()[i]]]
-                     = mmForce[mmAtoms_.collectiveIndex()[i]][0];
+                     = mmForce[mmAtoms_.collectiveIndex()[i] * 3 + 0];
         pyscfForce[3 * mmAtoms_.globalIndex()[mmAtoms_.collectiveIndex()[i]] + 1]
-                     = mmForce[mmAtoms_.collectiveIndex()[i]][1];
+                     = mmForce[mmAtoms_.collectiveIndex()[i] * 3 + 1];
         pyscfForce[3 * mmAtoms_.globalIndex()[mmAtoms_.collectiveIndex()[i]] + 2]
-                     = mmForce[mmAtoms_.collectiveIndex()[i]][2];
+                     = mmForce[mmAtoms_.collectiveIndex()[i] * 3 + 2];
 
         fOutput->forceWithVirial_.force_[mmAtoms_.localIndex()[i]][XX] +=
                 static_cast<real>(pyscfForce[3 * mmAtoms_.globalIndex()[mmAtoms_.collectiveIndex()[i]]])
