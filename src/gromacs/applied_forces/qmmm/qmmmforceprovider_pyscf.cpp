@@ -41,8 +41,8 @@
  */
 
 #include <Python.h>
-//#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
-//#include "numpy/arrayobject.h"
+#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
+#include "numpy/arrayobject.h"
 
 #include "gmxpre.h"
 
@@ -81,7 +81,7 @@ QMMMForceProvider::QMMMForceProvider(const QMMMParameters& parameters,
 
 QMMMForceProvider::~QMMMForceProvider()
 {
-    Py_Finalize();
+    //Py_Finalize();
     if (force_env_ != -1)
     {
         //cp2k_destroy_force_env(force_env_);
@@ -111,16 +111,10 @@ void QMMMForceProvider::appendLog(const std::string& msg)
 
 void QMMMForceProvider::initPython(const t_commrec& cr)
 {
-    Py_Initialize();
-    // import array fails outside valgrind because of long double errors
-    // Actually, with valgrind, you can see the warning:
-    //
-    // /home/user/miniconda3/lib/python3.10/site-packages/numpy/core/getlimits.py:542: UserWarning: Signature b'\x00\xd0\xcc\xcc\xcc\xcc\xcc\xcc\xfb\xbf\x00\x00\x00\x00\x00\x00' for <class 'numpy.longdouble'> does not match any known type: falling back to type probe function.
-    // This warnings indicates broken support for the dtype!
-    //
-    // This works fine with valgrind but directly causes a floating point
-    // exception when testing long double. Maybe we should just stick to
-    // python list.
+    // Currently python initialization only works in the main function.
+    // Need to find a proper place.
+    // If I place them here, import_array 100% fails at longdouble_multiply().
+    //Py_Initialize();
     /*
     import_array1(void(0));
     if (PyErr_Occurred()) {
@@ -144,10 +138,22 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
         }
         GMX_CATCH_ALL_AND_EXIT_WITH_FATAL_ERROR;
     }
+    fprintf(stderr, "Importing pyscfdriverii...\n");
     PyObject* pModule = PyImport_ImportModule("pyscfdriverii");
+    if (!pModule) {
+        fprintf(stderr, "pyscfdriverii load failed!\n");
+        exit(1);
+    }
+    fprintf(stderr, "pyscfdriverii load successful!\n");
     // PyObject* pFunc = PyObject_GetAttrString(pModule, "QMcalculation");
     // PyObject* pFuncPrint = PyObject_GetAttrString(pModule, "printProp");
+    fprintf(stderr, "Loading qmmmCalc...\n");
     PyObject* pFuncCalc = PyObject_GetAttrString(pModule, "qmmmCalc");
+    if (!pFuncCalc) {
+        fprintf(stderr, "qmmmCalc load failed!\n");
+        exit(1);
+    }
+    fprintf(stderr, "qmmmCalc load successful!\n");
 
     // Total number of atoms in the system
     size_t numAtoms = qmAtoms_.numAtomsGlobal() + mmAtoms_.numAtomsGlobal();
@@ -274,73 +280,18 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
         fprintf(stderr, "pointer to pyscf returned energy is nullptr\n");
     }
 
-    double qmForce[numAtomsQM][3] = {};
-    if (pQMForce){
-        fprintf(stderr, "pointer to pyscf returned qm force is not nullptr\n");
-        size_t numQMForceRow = PyList_Size(pQMForce);
-        fprintf(stderr, "number of rows in pQMForce %ld\n", numQMForceRow);
-        for (size_t i = 0; i < numQMForceRow; i ++){
-            
-            PyObject* pQMForceRow = PyList_GetItem(pQMForce,i);
-
-            size_t numQMForceColum = PyList_Size(pQMForceRow);
-            fprintf(stderr, "%ld\n", numQMForceColum);
-
-            if (pQMForceRow) {
-                fprintf(stdout, "pQMForceRow is not nullptr\n");
-            } else {
-                fprintf(stdout, "pQMForceRow IS nullptr\n");
-            }
-            fprintf(stderr, "%f\n", PyFloat_AsDouble((PyList_GetItem(pQMForceRow,0))));
-            qmForce[i][0] = PyFloat_AsDouble((PyList_GetItem(pQMForceRow,0)));
-            qmForce[i][1] = PyFloat_AsDouble((PyList_GetItem(pQMForceRow,1)));
-            qmForce[i][2] = PyFloat_AsDouble((PyList_GetItem(pQMForceRow,2)));
-        }
-    } else{
-        fprintf(stderr, "pointer to pyscf returned qm force IS nullptr!!!\n");
-    }
-
-    double mmForce[numAtomsMM][3] = {};
-    if (pMMForce){
-        fprintf(stderr, "pointer to pyscf returned mm force is not nullptr\n");
-        size_t numMMForceRow = PyList_Size(pMMForce);
-        fprintf(stderr, "number of rows in pMMForce %ld\n", numMMForceRow);
-        for (size_t i = 0; i < numMMForceRow; i ++){
-            
-            PyObject* pMMForceRow = PyList_GetItem(pMMForce,i);
-
-            size_t numMMForceColum = PyList_Size(pMMForceRow);
-            fprintf(stderr, "%ld\n", numMMForceColum);
-
-            if (pMMForceRow) {
-                fprintf(stdout, "pMMForceRow is not nullptr\n");
-            } else {
-                fprintf(stdout, "pMMForceRow IS nullptr\n");
-            }
-            fprintf(stderr, "%f\n", PyFloat_AsDouble((PyList_GetItem(pMMForceRow,0))));
-            mmForce[i][0] = PyFloat_AsDouble((PyList_GetItem(pMMForceRow,0)));
-            mmForce[i][1] = PyFloat_AsDouble((PyList_GetItem(pMMForceRow,1)));
-            mmForce[i][2] = PyFloat_AsDouble((PyList_GetItem(pMMForceRow,2)));
-        }
-    } else{
-        fprintf(stderr, "pointer to pyscf returned mm force IS nullptr!!!\n");
-    }
-
-
-    // TODO: read list, instead of numpy array
-    /*
     PyArrayObject* npyQMForce = reinterpret_cast<PyArrayObject*>(pQMForce);
 
     npy_intp npyQMForce_rows = PyArray_DIM(npyQMForce, 0);
     npy_intp npyQMForce_columns = PyArray_DIM(npyQMForce, 1);
     int qm_num = static_cast<int>(npyQMForce_rows);
     int qm_coordDIM = static_cast<int>(npyQMForce_columns);
-    double qm_force[qm_num*qm_coordDIM] = {};
+    double qmForce[qm_num*qm_coordDIM] = {};
     double* npyQMForce_cast = static_cast<double*>(PyArray_DATA(npyQMForce));
 
     for (npy_intp i = 0; i < npyQMForce_rows; ++i) {
         for (npy_intp j = 0; j < npyQMForce_columns; ++j) {
-            qm_force[i*3+j] = npyQMForce_cast[i * npyQMForce_columns + j];
+            qmForce[i*3+j] = npyQMForce_cast[i * npyQMForce_columns + j];
         }
     }
     PyArrayObject* npyMMForce = reinterpret_cast<PyArrayObject*>(pMMForce);
@@ -350,18 +301,15 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
 
     int mm_num = static_cast<int>(npyMMForce_rows);
     int mm_coordDIM = static_cast<int>(npyMMForce_columns);
-    double mm_force[mm_num*mm_coordDIM] = {};
+    double mmForce[mm_num*mm_coordDIM] = {};
     double* npyMMForce_cast = static_cast<double*>(PyArray_DATA(npyMMForce));
 
     for (npy_intp i = 0; i < npyMMForce_rows; ++i) {
         for (npy_intp j = 0; j < npyMMForce_columns; ++j) {
-            mm_force[i*3+j] = npyMMForce_cast[i * npyMMForce_columns + j];
+            mmForce[i*3+j] = npyMMForce_cast[i * npyMMForce_columns + j];
         }
     }
-    */
     // fprintf(stdout, "qm_num: %d, mm_num: %d\nqm_coordDIM: %d, mm_coordDIM: %d\nnumAtoms: %d\n", qm_num, mm_num, qm_coordDIM, mm_coordDIM, static_cast<int>(numAtoms));
-
-
 
     /*
      * 2) Cast data to double format of libpython

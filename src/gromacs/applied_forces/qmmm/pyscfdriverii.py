@@ -1,4 +1,3 @@
-import unittest
 import numpy
 import pyscf
 from pyscf import lib, gto, scf, grad, dft
@@ -72,9 +71,7 @@ def qmmmCalc(qmbasis, qmmult, qmcharge, qmkinds, qmcoords, mmkinds, mmcharges, m
     mf_grad = itrf.mm_charge_grad(grad.RKS(mf), mmcoords, mmcharges, mmradii, unit='ANG')
     qmforce = -mf_grad.kernel()
     # print("qmforce", type(qmforce))
-    qmforce_list = qmforce.tolist()
-    # print(qmforce_list)
-    
+
     mmforce_qmnuc = -mf_grad.grad_nuc_mm()
     mmforce_qme = -mf_grad.grad_hcore_mm(dm)
 
@@ -83,13 +80,11 @@ def qmmmCalc(qmbasis, qmmult, qmcharge, qmkinds, qmcoords, mmkinds, mmcharges, m
     # print("mmforce_e", type(mmforce_qme))
     # print(mmforce_qme)
 
-    mmforce = numpy.add(mmforce_qmnuc,mmforce_qme)
-    mmforce_list = mmforce.tolist()
-    # print(mmforce_list)
+    mmforce = mmforce_qmnuc + mmforce_qme
     # print("mmforce", type(mmforce))
     # print(mmforce)
 
-    return energy, qmforce_list, mmforce_list
+    return energy, qmforce, mmforce
 
 def printProp(prop):
     print(prop)

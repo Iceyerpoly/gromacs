@@ -46,17 +46,29 @@
 
 #include "legacymodules.h"
 
+#include <Python.h>
+#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
+#include "numpy/arrayobject.h"
+
 int main(int argc, char* argv[])
 {
     gmx::CommandLineProgramContext& context = gmx::initForCommandLine(&argc, &argv);
     try
     {
+        Py_Initialize();
+        import_array();
+        if (PyErr_Occurred()) {
+            fprintf(stderr, "Failed to import numpy Python module(s).\n");
+            exit(1);
+        }
+        assert(PyArray_API);
         gmx::CommandLineModuleManager manager("gmx", &context);
         registerTrajectoryAnalysisModules(&manager);
         registerLegacyModules(&manager);
         manager.addHelpTopic(gmx::createSelectionHelpTopic());
         int rc = manager.run(argc, argv);
         gmx::finalizeForCommandLine();
+        Py_Finalize();
         return rc;
     }
     catch (const std::exception& ex)
