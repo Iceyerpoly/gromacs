@@ -47,6 +47,7 @@
 #include "gmxpre.h"
 
 #include "qmmmforceprovider.h"
+#include "qmmminputgenerator.h"
 
 #include "gromacs/domdec/domdec_struct.h"
 #include "gromacs/gmxlib/network.h"
@@ -145,10 +146,10 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
         exit(1);
     }
     fprintf(stderr, "pyscfdriverii load successful!\n");
-    // PyObject* pFunc = PyObject_GetAttrString(pModule, "QMcalculation");
-    // PyObject* pFuncPrint = PyObject_GetAttrString(pModule, "printProp");
-    fprintf(stderr, "Loading qmmmCalc...\n");
+
     PyObject* pFuncCalc = PyObject_GetAttrString(pModule, "qmmmCalc");
+    PyObject* pFuncPrint = PyObject_GetAttrString(pModule, "printProp");
+    fprintf(stderr, "Loading qmmmCalc...\n");
     if (!pFuncCalc) {
         fprintf(stderr, "qmmmCalc load failed!\n");
         exit(1);
@@ -160,6 +161,7 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
     size_t numAtomsQM = qmAtoms_.numAtomsGlobal();
     size_t numAtomsMM = mmAtoms_.numAtomsGlobal();
     // Save box
+
     copy_mat(fInput.box_, box_);
 
     // Initialize PBC
@@ -171,23 +173,32 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
 
     // x - coordinates (gathered across nodes in case of DD)
     std::vector<RVec> x(numAtoms, RVec({ 0.0, 0.0, 0.0 }));
+    // Put all atoms into the central box (they might be shifted out of it because of the translation)
+    // put_atoms_in_box(pbcType_, fInput.box_, ArrayRef<RVec>(x));
 
     // Fill cordinates of local QM atoms and add translation
     PyObject* pyQMKinds = PyList_New(numAtomsQM);
     PyObject* pyQMCoords = PyList_New(numAtomsQM);
-
+    PyObject* pyQMLocalIndex = PyList_New(numAtomsQM);
     for (size_t i = 0; i < qmAtoms_.numAtomsLocal(); i++)
     {
+        int qmLocalIndex = qmAtoms_.localIndex()[i];
+        PyObject* pyqmLoclNdx = PyLong_FromLong(qmLocalIndex);
+        PyList_SetItem(pyQMLocalIndex, i, pyqmLoclNdx);
         x[qmAtoms_.globalIndex()[qmAtoms_.collectiveIndex()[i]]] =
-                fInput.x_[qmAtoms_.localIndex()[i]] + parameters_.qmTrans_;
+                fInput.x_[qmLocalIndex];
 
-        PyObject* pySymbol = PyUnicode_FromString(periodic_system[parameters_.atomNumbers_[qmAtoms_.localIndex()[i]]].c_str());
+        PyObject* pySymbol = PyUnicode_FromString(periodic_system[parameters_.atomNumbers_[qmLocalIndex]].c_str());
         PyList_SetItem(pyQMKinds, i, pySymbol);
 
         PyObject* pyCoords_row = PyList_New(3);
-        double coordTempX =  10 * (fInput.x_[qmAtoms_.localIndex()[i]][XX]  + parameters_.qmTrans_[XX]);
-        double coordTempY =  10 * (fInput.x_[qmAtoms_.localIndex()[i]][YY]  + parameters_.qmTrans_[YY]);
-        double coordTempZ =  10 * (fInput.x_[qmAtoms_.localIndex()[i]][ZZ]  + parameters_.qmTrans_[ZZ]);
+        // double coordTempX =  10 * (fInput.x_[qmLocalIndex][XX] + parameters_.qmTrans_[XX]);
+        // double coordTempY =  10 * (fInput.x_[qmLocalIndex][YY] + parameters_.qmTrans_[YY]);
+        // double coordTempZ =  10 * (fInput.x_[qmLocalIndex][ZZ] + parameters_.qmTrans_[ZZ]);
+
+        double coordTempX =  10 * (fInput.x_[qmLocalIndex][XX]);
+        double coordTempY =  10 * (fInput.x_[qmLocalIndex][YY]);
+        double coordTempZ =  10 * (fInput.x_[qmLocalIndex][ZZ]);
 
         PyObject* pyCoordsX = PyFloat_FromDouble(coordTempX);
         PyObject* pyCoordsY = PyFloat_FromDouble(coordTempY);
@@ -200,28 +211,35 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
         PyList_SetItem(pyQMCoords, i, pyCoords_row);
     }
 
-    // PyObject_CallFunctionObjArgs(pFuncPrint, pyQMKinds, NULL);
-    // PyObject_CallFunctionObjArgs(pFuncPrint, pyQMCoords, NULL);
+    // fprintf(stderr, "qmkinds[%d] %3s \n", numAtomsQM-1, periodic_system[parameters_.atomNumbers_[qmAtoms_.localIndex()[numAtomsQM-1]]].c_str());
+    // fprintf(stderr, "qmcoords[%d][0] %f \n", numAtomsQM-1, 10 * (fInput.x_[qmAtoms_.localIndex()[numAtomsQM-1]][XX]  + parameters_.qmTrans_[XX]));
 
     // Fill cordinates of local MM atoms and add translation
     PyObject* pyMMKinds = PyList_New(numAtomsMM);
     PyObject* pyMMCharges = PyList_New(numAtomsMM);
     PyObject* pyMMCoords = PyList_New(numAtomsMM);
+    PyObject* pyMMLocalIndex = PyList_New(numAtomsMM);
     for (size_t i = 0; i < mmAtoms_.numAtomsLocal(); i++)
     {
+        int mmLocalIndex = mmAtoms_.localIndex()[i];
+        PyObject* pymmLoclNdx = PyLong_FromLong(mmLocalIndex);
+        PyList_SetItem(pyMMLocalIndex, i, pymmLoclNdx);
         x[mmAtoms_.globalIndex()[mmAtoms_.collectiveIndex()[i]]] =
-                fInput.x_[mmAtoms_.localIndex()[i]] + parameters_.qmTrans_;
+                fInput.x_[mmLocalIndex];
 
-        PyObject* pySymbol = PyUnicode_FromString(periodic_system[parameters_.atomNumbers_[mmAtoms_.localIndex()[i]]].c_str());
+        PyObject* pySymbol = PyUnicode_FromString(periodic_system[parameters_.atomNumbers_[mmLocalIndex]].c_str());
         PyList_SetItem(pyMMKinds, i, pySymbol);
 
-        PyObject* pyCharge = PyFloat_FromDouble(fInput.chargeA_[mmAtoms_.localIndex()[i]]);
+        PyObject* pyCharge = PyFloat_FromDouble(fInput.chargeA_[mmLocalIndex]);
         PyList_SetItem(pyMMCharges, i, pyCharge);
 
         PyObject* pyCoords_row = PyList_New(3);
-        double coordTempX =  10 * (fInput.x_[mmAtoms_.localIndex()[i]][XX]  + parameters_.qmTrans_[XX]);
-        double coordTempY =  10 * (fInput.x_[mmAtoms_.localIndex()[i]][YY]  + parameters_.qmTrans_[YY]);
-        double coordTempZ =  10 * (fInput.x_[mmAtoms_.localIndex()[i]][ZZ]  + parameters_.qmTrans_[ZZ]);
+        // double coordTempX =  10 * (fInput.x_[mmLocalIndex][XX] + parameters_.qmTrans_[XX]);
+        // double coordTempY =  10 * (fInput.x_[mmLocalIndex][YY] + parameters_.qmTrans_[YY]);
+        // double coordTempZ =  10 * (fInput.x_[mmLocalIndex][ZZ] + parameters_.qmTrans_[ZZ]);
+        double coordTempX =  10 * (fInput.x_[mmLocalIndex][XX]);
+        double coordTempY =  10 * (fInput.x_[mmLocalIndex][YY]);
+        double coordTempZ =  10 * (fInput.x_[mmLocalIndex][ZZ]);
 
         PyObject* pyCoordsX = PyFloat_FromDouble(coordTempX);
         PyObject* pyCoordsY = PyFloat_FromDouble(coordTempY);
@@ -235,9 +253,22 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
 
     }
 
-    // PyObject_CallFunctionObjArgs(pFuncPrint, pyMMKinds, NULL);
-    // PyObject_CallFunctionObjArgs(pFuncPrint, pyMMCharges, NULL);
-    // PyObject_CallFunctionObjArgs(pFuncPrint, pyMMCoords, NULL);
+    size_t numLinks = parameters_.link_.size();
+    PyObject* PyLinks = PyList_New(numLinks);
+    for (size_t i = 0; i < numLinks ; i ++)
+    {
+        PyObject* pyLinkQM = PyLong_FromLong(parameters_.link_[i].qm);
+        PyObject* pyLinkMM = PyLong_FromLong(parameters_.link_[i].mm);
+
+        PyObject* pyLinkPair = PyList_New(2);
+
+        PyList_SetItem(pyLinkPair, 0, pyLinkQM);
+        PyList_SetItem(pyLinkPair, 1, pyLinkMM);
+        PyList_SetItem(PyLinks, i, pyLinkPair);
+    }
+
+    // fprintf(stderr, "mmcharge[%d] %f \n", numAtomsMM-1, fInput.chargeA_[mmAtoms_.localIndex()[numAtomsMM-1]]);
+    // fprintf(stderr, "mmcoords[%d][0] %f \n", numAtomsMM-1, 10 * (fInput.x_[mmAtoms_.localIndex()[numAtomsMM-1]][XX] + parameters_.qmTrans_[XX]));
 
     // If we are in MPI / DD conditions then gather coordinates over nodes
     if (havePPDomainDecomposition(&fInput.cr_))
@@ -245,22 +276,71 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
         gmx_sum(3 * numAtoms, x.data()->as_vec(), &fInput.cr_);
     }
 
-    // Put all atoms into the central box (they might be shifted out of it because of the translation)
-    put_atoms_in_box(pbcType_, fInput.box_, ArrayRef<RVec>(x));
-
-
-    const std::string qm_basis = "ccpvdz";
+    const std::string qm_basis = "631G";
 
     // TODO: fix for MPI version
+    PyObject* pyQMBasis = PyUnicode_FromString(qm_basis.c_str());
+    PyObject* pyQMMult = PyLong_FromLong(parameters_.qmMultiplicity_);
+    PyObject* pyQMCharge = PyLong_FromLong(parameters_.qmCharge_);
+    // if (!pyQMBasis){
+    //     fprintf(stderr, "pyQMBasis IS nullptr!!!\n");
+    // } else {
+    //     fprintf(stderr, "pyQMBasis is not nullptr.\n");
+    // }
 
-    PyObject* pQMBasis = PyUnicode_FromString(qm_basis.c_str());
-    PyObject* pQMMult = PyLong_FromLong(parameters_.qmMultiplicity_);
-    PyObject* pQMCharge = PyLong_FromLong(parameters_.qmCharge_);
+    // if (!pyQMMult){
+    //     fprintf(stderr, "pyQMMult IS nullptr!!!\n");
+    // } else {
+    //     fprintf(stderr, "pyQMMult is not nullptr.\n");
+    // }
+
+    // if (!pyQMCharge){
+    //     fprintf(stderr, "pyQMCharge IS nullptr!!!\n");
+    // } else {
+    //     fprintf(stderr, "pyQMCharge is not nullptr.\n");
+    // }
+
+    // if (!pyQMKinds){
+    //     fprintf(stderr, "pyQMKinds IS nullptr!!!\n");
+    // } else {
+    //     fprintf(stderr, "pyQMKinds is not nullptr.\n");
+    // }
+
+    // if (!pyQMCoords){
+    //     fprintf(stderr, "pyQMCoords IS nullptr!!!\n");
+    // } else {
+    //     fprintf(stderr, "pyQMCoords is not nullptr.\n");
+    // }
+
+    // if (!pyMMKinds){
+    //     fprintf(stderr, "pyMMKinds IS nullptr!!!\n");
+    // } else {
+    //     fprintf(stderr, "pyMMKinds is not nullptr.\n");
+    // }
+
+    // if (!pyMMCharges){
+    //     fprintf(stderr, "pyMMCharges IS nullptr!!!\n");
+    // } else {
+    //     fprintf(stderr, "pyMMCharges is not nullptr.\n");
+    // }
+
+    // if (!pyMMCoords){
+    //     fprintf(stderr, "pyMMCoords IS nullptr!!!\n");
+    // } else {
+    //     fprintf(stderr, "pyMMCoords is not nullptr.\n");
+    // }
+
+
+    // PyObject_CallFunctionObjArgs(pFuncPrint, pyQMKinds, NULL);
+    // PyObject_CallFunctionObjArgs(pFuncPrint, pyQMCoords, NULL);
+    // PyObject_CallFunctionObjArgs(pFuncPrint, pyMMKinds, NULL);
+    // PyObject_CallFunctionObjArgs(pFuncPrint, pyMMCoords, NULL);
+    // PyObject_CallFunctionObjArgs(pFuncPrint, pyMMCharges, NULL);
 
     PyObject* pyscfCalcReturn = PyObject_CallFunctionObjArgs(pFuncCalc,
-            pQMBasis, pQMMult, pQMCharge,
-            pyQMKinds, pyQMCoords, pyMMKinds,
-            pyMMCharges, pyMMCoords, NULL);
+            pyQMBasis, pyQMMult, pyQMCharge,
+            pyQMLocalIndex, pyQMKinds, pyQMCoords,
+            pyMMLocalIndex, pyMMKinds, pyMMCharges, pyMMCoords, PyLinks, NULL);
     if (!pyscfCalcReturn){
         fprintf(stderr, "pyscfCalcReturn IS nullptr!!!\n");
     }
@@ -457,7 +537,8 @@ void QMMMForceProvider::forceRecorder(ForceProviderOutput* fOutput, std::vector<
 
     std::string QMMM_record = "";
     std::ofstream recordFile;
-    recordFile.open("record_pyscf.txt", std::ios::app);
+    const std::string pyscfRecordName = parameters_.qmFileNameBase_ + "_record.txt";
+    recordFile.open(pyscfRecordName.c_str(), std::ios::app);
     // size_t numAtoms = qmAtoms_.numAtomsLocal() + mmAtoms_.numAtomsLocal();
     // recordFile << "number of atoms" << numAtoms << std::endl;
     // recordFile << "step number = " << "need to find..." << std::endl;
@@ -469,11 +550,12 @@ void QMMMForceProvider::forceRecorder(ForceProviderOutput* fOutput, std::vector<
     QMMM_record += formatString("step = ");
     QMMM_record += formatString("%" PRId64, fInput.step_);
     QMMM_record += formatString(", time = %f\n", fInput.t_);
-    QMMM_record += formatString("   %7s %7s %7s %12s %9s %9s %9s %9s %9s %10s %4s %6s %6s %6s\n", "x", "y", "z", "Fqmmmmx", "Fqmmmmy", "Fqmmmz", "Ftotx", "Ftoty", "Ftotz", "charge", "i","local", "global", "collec");
+    QMMM_record += formatString("  %7s %7s %7s %6s %6s %6s %6s\n", "x", "y", "z", "i","local", "global", "collec");
+    // QMMM_record += formatString("  %6s %7s %7s %7s %19s %19s %19s %10s\n", "local index", "x", "y", "z", "Fqmmmm x", "Fqmmmm y", "Fqmmm z", "charge");
     for (size_t i = 0; i < qmAtoms_.numAtomsLocal(); i++)
     {
 
-        QMMM_record += formatString("%2s QM  ", periodic_system[parameters_.atomNumbers_[qmAtoms_.globalIndex()[i]]].c_str());
+        QMMM_record += formatString("%4d  %2s QM  ", qmAtoms_.localIndex()[i], periodic_system[parameters_.atomNumbers_[qmAtoms_.globalIndex()[i]]].c_str());
         Ftotx = fOutput->forceWithVirial_.force_[qmAtoms_.localIndex()[i]][XX]/c_hartreeBohr2Md;
         Ftoty = fOutput->forceWithVirial_.force_[qmAtoms_.localIndex()[i]][YY]/c_hartreeBohr2Md;
         Ftotz = fOutput->forceWithVirial_.force_[qmAtoms_.localIndex()[i]][ZZ]/c_hartreeBohr2Md;
@@ -485,23 +567,23 @@ void QMMMForceProvider::forceRecorder(ForceProviderOutput* fOutput, std::vector<
         // Fy = Fy/c_bohr2ANG;
         // Fz = Fz/c_bohr2ANG;
 
-        coordx = (fInput.x_[qmAtoms_.localIndex()[i]][XX] + parameters_.qmTrans_[XX]) * 10;
-        coordy = (fInput.x_[qmAtoms_.localIndex()[i]][YY] + parameters_.qmTrans_[YY]) * 10;
-        coordz = (fInput.x_[qmAtoms_.localIndex()[i]][ZZ] + parameters_.qmTrans_[ZZ]) * 10;
+        coordx = (fInput.x_[qmAtoms_.localIndex()[i]][XX]) * 10;
+        coordy = (fInput.x_[qmAtoms_.localIndex()[i]][YY]) * 10;
+        coordz = (fInput.x_[qmAtoms_.localIndex()[i]][ZZ]) * 10;
 
         charge = fInput.chargeA_[qmAtoms_.localIndex()[i]];
 
         QMMM_record += formatString("%7.4lf %7.4lf %7.4lf  ", coordx, coordy, coordz);
-        QMMM_record += formatString("%9.5lf %9.5lf %9.5lf ", Fx, Fy, Fz);
-        QMMM_record += formatString("%9.5lf %9.5lf %9.5lf", Ftotx, Ftoty, Ftotz);
-        QMMM_record += formatString("%7.3f %4d %4d %4d %4d\n", 0.0, static_cast<int>(i), qmAtoms_.localIndex()[i], qmAtoms_.globalIndex()[i], qmAtoms_.collectiveIndex()[i]);
+        // QMMM_record += formatString("%19.15lf %19.15lf %19.15lf %7.3f ", Fx, Fy, Fz, charge);
+        // QMMM_record += formatString("                                 %19.15lf %19.15lf %19.15lf \n", Ftotx, Ftoty, Ftotz);
+        QMMM_record += formatString("%8d %6d %6d %6d\n", static_cast<int>(i), qmAtoms_.localIndex()[i], qmAtoms_.globalIndex()[i], qmAtoms_.collectiveIndex()[i]);
     }
 
 
     for (size_t i = 0; i < mmAtoms_.numAtomsLocal(); i++)
     {
 
-        QMMM_record += formatString("%2s MM  ", periodic_system[parameters_.atomNumbers_[mmAtoms_.globalIndex()[i]]].c_str());
+        QMMM_record += formatString("%4d  %2s MM  ", mmAtoms_.localIndex()[i], periodic_system[parameters_.atomNumbers_[mmAtoms_.globalIndex()[i]]].c_str());
         Ftotx = fOutput->forceWithVirial_.force_[mmAtoms_.localIndex()[i]][XX]/c_hartreeBohr2Md;
         Ftoty = fOutput->forceWithVirial_.force_[mmAtoms_.localIndex()[i]][YY]/c_hartreeBohr2Md;
         Ftotz = fOutput->forceWithVirial_.force_[mmAtoms_.localIndex()[i]][ZZ]/c_hartreeBohr2Md;
@@ -513,21 +595,20 @@ void QMMMForceProvider::forceRecorder(ForceProviderOutput* fOutput, std::vector<
         // Fy = Fy/c_bohr2ANG;
         // Fz = Fz/c_bohr2ANG;
 
-        coordx = (fInput.x_[mmAtoms_.localIndex()[i]][XX] + parameters_.qmTrans_[XX]) * 10;
-        coordy = (fInput.x_[mmAtoms_.localIndex()[i]][YY] + parameters_.qmTrans_[XX]) * 10;
-        coordz = (fInput.x_[mmAtoms_.localIndex()[i]][ZZ] + parameters_.qmTrans_[XX]) * 10;
+        coordx = (fInput.x_[mmAtoms_.localIndex()[i]][XX]) * 10;
+        coordy = (fInput.x_[mmAtoms_.localIndex()[i]][YY]) * 10;
+        coordz = (fInput.x_[mmAtoms_.localIndex()[i]][ZZ]) * 10;
 
         charge = fInput.chargeA_[mmAtoms_.localIndex()[i]];
         QMMM_record += formatString("%7.4lf %7.4lf %7.4lf  ", coordx, coordy, coordz);
-        QMMM_record += formatString("%9.5lf %9.5lf %9.5lf ", Fx, Fy, Fz);
-        QMMM_record += formatString("%9.5lf %9.5lf %9.5lf", Ftotx, Ftoty, Ftotz);
-        QMMM_record += formatString("%7.3f %4d %4d %4d %4d\n", charge, static_cast<int>(i), mmAtoms_.localIndex()[i], mmAtoms_.globalIndex()[i], mmAtoms_.collectiveIndex()[i]);
+        // QMMM_record += formatString("%19.15lf %19.15lf %19.15lf %7.3f ", Fx, Fy, Fz, charge);
+        // QMMM_record += formatString("                                 %19.15lf %19.15lf %19.15lf \n", Ftotx, Ftoty, Ftotz);
+        QMMM_record += formatString("%8d %6d %6d %6d\n", static_cast<int>(i), mmAtoms_.localIndex()[i], mmAtoms_.globalIndex()[i], mmAtoms_.collectiveIndex()[i]);
     }
 
+
     QMMM_record += formatString("\n");
-
     recordFile << QMMM_record;
-
     recordFile.close();
 
     return;

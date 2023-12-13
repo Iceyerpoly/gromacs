@@ -586,6 +586,9 @@ void QMMMOptions::modifyQMMMTopology(gmx_mtop_t* mtop)
     if (topInfo.numLinkBonds > 0)
     {
         msg += formatString("QM-MM broken bonds found: %d\n", topInfo.numLinkBonds);
+        for (int i = 0; i < parameters_.link_.size(); i ++){
+            msg += formatString("%dth broken bond is between index %ld (QM) and %ld (MM)\n", i+1, parameters_.link_[i].qm, parameters_.link_[i].mm);
+        }
     }
 
     appendLog(msg + "\n");
