@@ -504,7 +504,7 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
                 * c_hartreeBohr2Md;
     }
 
-    forceRecorder(fOutput, pyscfForce, fInput);
+    // forceRecorder(fOutput, pyscfForce, fInput);
 
     Py_XDECREF(pFuncCalc);
     // Py_XDECREF(pFunc);

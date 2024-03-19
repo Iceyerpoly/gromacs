@@ -309,7 +309,7 @@ void QMMMOptions::processTprFilename(const MdRunInputFilename& tprFilename)
 
     parameters_.qmFileNameBase_ =
             stripExtension(std::filesystem::path(tprFilename.mdRunFilename_).filename())
-                    .append("_cp2k")
+                    .append("_pyscf")
                     .u8string();
 }
 
@@ -536,7 +536,7 @@ void QMMMOptions::modifyQMMMTopology(gmx_mtop_t* mtop)
     real qmC = static_cast<real>(parameters_.qmCharge_);
 
     // Print message to the log about performed modifications
-    std::string msg = "\nQMMM Interface with CP2K is active, topology was modified!\n";
+    std::string msg = "\nQMMM Interface with pyscf is active, topology was modified!\n";
 
     msg += formatString(
             "Number of QM atoms: %d\nNumber of MM atoms: %d\n", topInfo.numQMAtoms, topInfo.numMMAtoms);
