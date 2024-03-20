@@ -147,23 +147,35 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
     }
     fprintf(stderr, "pyscfdriverii load successful!\n");
 
-    PyObject* pFuncCalc = PyObject_GetAttrString(pModule, "qmmmCalc");
-    PyObject* pFuncPrint = PyObject_GetAttrString(pModule, "printProp");
-    fprintf(stderr, "Loading qmmmCalc...\n");
-    if (!pFuncCalc) {
-        fprintf(stderr, "qmmmCalc load failed!\n");
-        exit(1);
-    }
-    fprintf(stderr, "qmmmCalc load successful!\n");
-
     // Total number of atoms in the system
     size_t numAtoms = qmAtoms_.numAtomsGlobal() + mmAtoms_.numAtomsGlobal();
     size_t numAtomsQM = qmAtoms_.numAtomsGlobal();
     size_t numAtomsMM = mmAtoms_.numAtomsGlobal();
     // Save box
 
-    copy_mat(fInput.box_, box_);
+    PyObject* pFuncPrint = PyObject_GetAttrString(pModule, "printProp");
+    PyObject* pFuncCalc = nullptr;
+    if (numAtomsMM > 0){
+        fprintf(stderr, "Loading qmmmCalc...\n");
+        pFuncCalc = PyObject_GetAttrString(pModule, "qmmmCalc");
+        if (!pFuncCalc) {
+            fprintf(stderr, "qmmmCalc load failed!\n");
+            exit(1);
+        }
+        fprintf(stderr, "qmmmCalc load successful!\n");
+    } else if (numAtomsMM == 0) {
+        fprintf(stderr, "numAtomsMM = 0, Loading qmCalc...\n");
+        pFuncCalc = PyObject_GetAttrString(pModule, "qmCalc");
+        if (!pFuncCalc) {
+            fprintf(stderr, "qmCalc load failed!\n");
+            exit(1);
+        }
+        fprintf(stderr, "qmCalc load successful!\n");
+    } else {
+        fprintf(stderr, "numAtomsMM = %ld, exit...\n", numAtomsMM);
+    }
 
+    copy_mat(fInput.box_, box_);
     // Initialize PBC
     t_pbc pbc;
     set_pbc(&pbc, pbcType_, box_);
@@ -177,6 +189,11 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
     // put_atoms_in_box(pbcType_, fInput.box_, ArrayRef<RVec>(x));
 
     // Fill cordinates of local QM atoms and add translation
+    const std::string qm_basis = "631G";
+    PyObject* pyQMBasis = PyUnicode_FromString(qm_basis.c_str());
+    PyObject* pyQMMult = PyLong_FromLong(parameters_.qmMultiplicity_);
+    PyObject* pyQMCharge = PyLong_FromLong(parameters_.qmCharge_);
+
     PyObject* pyQMKinds = PyList_New(numAtomsQM);
     PyObject* pyQMCoords = PyList_New(numAtomsQM);
     PyObject* pyQMLocalIndex = PyList_New(numAtomsQM);
@@ -219,40 +236,8 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
     PyObject* pyMMCharges = PyList_New(numAtomsMM);
     PyObject* pyMMCoords = PyList_New(numAtomsMM);
     PyObject* pyMMLocalIndex = PyList_New(numAtomsMM);
-    for (size_t i = 0; i < mmAtoms_.numAtomsLocal(); i++)
-    {
-        int mmLocalIndex = mmAtoms_.localIndex()[i];
-        PyObject* pymmLoclNdx = PyLong_FromLong(mmLocalIndex);
-        PyList_SetItem(pyMMLocalIndex, i, pymmLoclNdx);
-        x[mmAtoms_.globalIndex()[mmAtoms_.collectiveIndex()[i]]] =
-                fInput.x_[mmLocalIndex];
-
-        PyObject* pySymbol = PyUnicode_FromString(periodic_system[parameters_.atomNumbers_[mmLocalIndex]].c_str());
-        PyList_SetItem(pyMMKinds, i, pySymbol);
-
-        PyObject* pyCharge = PyFloat_FromDouble(fInput.chargeA_[mmLocalIndex]);
-        PyList_SetItem(pyMMCharges, i, pyCharge);
-
-        PyObject* pyCoords_row = PyList_New(3);
-        // double coordTempX =  10 * (fInput.x_[mmLocalIndex][XX] + parameters_.qmTrans_[XX]);
-        // double coordTempY =  10 * (fInput.x_[mmLocalIndex][YY] + parameters_.qmTrans_[YY]);
-        // double coordTempZ =  10 * (fInput.x_[mmLocalIndex][ZZ] + parameters_.qmTrans_[ZZ]);
-        double coordTempX =  10 * (fInput.x_[mmLocalIndex][XX]);
-        double coordTempY =  10 * (fInput.x_[mmLocalIndex][YY]);
-        double coordTempZ =  10 * (fInput.x_[mmLocalIndex][ZZ]);
-
-        PyObject* pyCoordsX = PyFloat_FromDouble(coordTempX);
-        PyObject* pyCoordsY = PyFloat_FromDouble(coordTempY);
-        PyObject* pyCoordsZ = PyFloat_FromDouble(coordTempZ);
-
-        PyList_SetItem(pyCoords_row, XX, pyCoordsX);
-        PyList_SetItem(pyCoords_row, YY, pyCoordsY);
-        PyList_SetItem(pyCoords_row, ZZ, pyCoordsZ);
-
-        PyList_SetItem(pyMMCoords, i, pyCoords_row);
-
-    }
-
+    PyObject* pyscfCalcReturn = nullptr;
+    fprintf(stderr, "number of MM atoms: %ld", numAtomsMM);
     size_t numLinks = parameters_.link_.size();
     PyObject* PyLinks = PyList_New(numLinks);
     for (size_t i = 0; i < numLinks ; i ++)
@@ -267,6 +252,55 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
         PyList_SetItem(PyLinks, i, pyLinkPair);
     }
 
+    if (numAtomsMM == 0){
+        pyscfCalcReturn = PyObject_CallFunctionObjArgs(pFuncCalc,
+                                pyQMBasis, pyQMMult, pyQMCharge,
+                                pyQMKinds, pyQMCoords, NULL);
+    }   else{
+        for (size_t i = 0; i < mmAtoms_.numAtomsLocal(); i++)
+        {
+            int mmLocalIndex = mmAtoms_.localIndex()[i];
+            PyObject* pymmLoclNdx = PyLong_FromLong(mmLocalIndex);
+            PyList_SetItem(pyMMLocalIndex, i, pymmLoclNdx);
+            x[mmAtoms_.globalIndex()[mmAtoms_.collectiveIndex()[i]]] =
+                    fInput.x_[mmLocalIndex];
+
+            PyObject* pySymbol = PyUnicode_FromString(periodic_system[parameters_.atomNumbers_[mmLocalIndex]].c_str());
+            PyList_SetItem(pyMMKinds, i, pySymbol);
+
+            PyObject* pyCharge = PyFloat_FromDouble(fInput.chargeA_[mmLocalIndex]);
+            PyList_SetItem(pyMMCharges, i, pyCharge);
+
+            PyObject* pyCoords_row = PyList_New(3);
+            // double coordTempX =  10 * (fInput.x_[mmLocalIndex][XX] + parameters_.qmTrans_[XX]);
+            // double coordTempY =  10 * (fInput.x_[mmLocalIndex][YY] + parameters_.qmTrans_[YY]);
+            // double coordTempZ =  10 * (fInput.x_[mmLocalIndex][ZZ] + parameters_.qmTrans_[ZZ]);
+            double coordTempX =  10 * (fInput.x_[mmLocalIndex][XX]);
+            double coordTempY =  10 * (fInput.x_[mmLocalIndex][YY]);
+            double coordTempZ =  10 * (fInput.x_[mmLocalIndex][ZZ]);
+
+            PyObject* pyCoordsX = PyFloat_FromDouble(coordTempX);
+            PyObject* pyCoordsY = PyFloat_FromDouble(coordTempY);
+            PyObject* pyCoordsZ = PyFloat_FromDouble(coordTempZ);
+
+            PyList_SetItem(pyCoords_row, XX, pyCoordsX);
+            PyList_SetItem(pyCoords_row, YY, pyCoordsY);
+            PyList_SetItem(pyCoords_row, ZZ, pyCoordsZ);
+
+            PyList_SetItem(pyMMCoords, i, pyCoords_row);
+
+        }
+        pyscfCalcReturn = PyObject_CallFunctionObjArgs(pFuncCalc,
+            pyQMBasis, pyQMMult, pyQMCharge,
+            pyQMLocalIndex, pyQMKinds, pyQMCoords,
+            pyMMLocalIndex, pyMMKinds, pyMMCharges, pyMMCoords, PyLinks, NULL);
+        if (!pyscfCalcReturn){
+            fprintf(stderr, "pyscfCalcReturn IS nullptr!!!\n");
+        }
+    }
+
+
+
     // fprintf(stderr, "mmcharge[%d] %f \n", numAtomsMM-1, fInput.chargeA_[mmAtoms_.localIndex()[numAtomsMM-1]]);
     // fprintf(stderr, "mmcoords[%d][0] %f \n", numAtomsMM-1, 10 * (fInput.x_[mmAtoms_.localIndex()[numAtomsMM-1]][XX] + parameters_.qmTrans_[XX]));
 
@@ -276,74 +310,7 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
         gmx_sum(3 * numAtoms, x.data()->as_vec(), &fInput.cr_);
     }
 
-    const std::string qm_basis = "631G";
-
     // TODO: fix for MPI version
-    PyObject* pyQMBasis = PyUnicode_FromString(qm_basis.c_str());
-    PyObject* pyQMMult = PyLong_FromLong(parameters_.qmMultiplicity_);
-    PyObject* pyQMCharge = PyLong_FromLong(parameters_.qmCharge_);
-    // if (!pyQMBasis){
-    //     fprintf(stderr, "pyQMBasis IS nullptr!!!\n");
-    // } else {
-    //     fprintf(stderr, "pyQMBasis is not nullptr.\n");
-    // }
-
-    // if (!pyQMMult){
-    //     fprintf(stderr, "pyQMMult IS nullptr!!!\n");
-    // } else {
-    //     fprintf(stderr, "pyQMMult is not nullptr.\n");
-    // }
-
-    // if (!pyQMCharge){
-    //     fprintf(stderr, "pyQMCharge IS nullptr!!!\n");
-    // } else {
-    //     fprintf(stderr, "pyQMCharge is not nullptr.\n");
-    // }
-
-    // if (!pyQMKinds){
-    //     fprintf(stderr, "pyQMKinds IS nullptr!!!\n");
-    // } else {
-    //     fprintf(stderr, "pyQMKinds is not nullptr.\n");
-    // }
-
-    // if (!pyQMCoords){
-    //     fprintf(stderr, "pyQMCoords IS nullptr!!!\n");
-    // } else {
-    //     fprintf(stderr, "pyQMCoords is not nullptr.\n");
-    // }
-
-    // if (!pyMMKinds){
-    //     fprintf(stderr, "pyMMKinds IS nullptr!!!\n");
-    // } else {
-    //     fprintf(stderr, "pyMMKinds is not nullptr.\n");
-    // }
-
-    // if (!pyMMCharges){
-    //     fprintf(stderr, "pyMMCharges IS nullptr!!!\n");
-    // } else {
-    //     fprintf(stderr, "pyMMCharges is not nullptr.\n");
-    // }
-
-    // if (!pyMMCoords){
-    //     fprintf(stderr, "pyMMCoords IS nullptr!!!\n");
-    // } else {
-    //     fprintf(stderr, "pyMMCoords is not nullptr.\n");
-    // }
-
-
-    // PyObject_CallFunctionObjArgs(pFuncPrint, pyQMKinds, NULL);
-    // PyObject_CallFunctionObjArgs(pFuncPrint, pyQMCoords, NULL);
-    // PyObject_CallFunctionObjArgs(pFuncPrint, pyMMKinds, NULL);
-    // PyObject_CallFunctionObjArgs(pFuncPrint, pyMMCoords, NULL);
-    // PyObject_CallFunctionObjArgs(pFuncPrint, pyMMCharges, NULL);
-
-    PyObject* pyscfCalcReturn = PyObject_CallFunctionObjArgs(pFuncCalc,
-            pyQMBasis, pyQMMult, pyQMCharge,
-            pyQMLocalIndex, pyQMKinds, pyQMCoords,
-            pyMMLocalIndex, pyMMKinds, pyMMCharges, pyMMCoords, PyLinks, NULL);
-    if (!pyscfCalcReturn){
-        fprintf(stderr, "pyscfCalcReturn IS nullptr!!!\n");
-    }
 
     PyObject* pQMMMEnergy = PyTuple_GetItem(pyscfCalcReturn, 0);
     PyObject* pQMForce = PyTuple_GetItem(pyscfCalcReturn, 1);
@@ -383,21 +350,22 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
             qmForce[i*3+j] = npyQMForce_cast[i * npyQMForce_columns + j];
         }
     }
-    PyArrayObject* npyMMForce = reinterpret_cast<PyArrayObject*>(pMMForce);
+    double mmForce[numAtomsMM*3+1] = {};
+    if (numAtomsMM > 0) {
+        PyArrayObject* npyMMForce = reinterpret_cast<PyArrayObject*>(pMMForce);
 
-    npy_intp npyMMForce_rows = PyArray_DIM(npyMMForce, 0);
-    npy_intp npyMMForce_columns = PyArray_DIM(npyMMForce, 1);
+        GMX_ASSERT(numAtomsMM == static_cast<int>(PyArray_DIM(npyMMForce, 0)), "Check MM atom number");
+        GMX_ASSERT(3 == static_cast<int>(PyArray_DIM(npyMMForce, 1)), "Check if 3 columns");
 
-    int mm_num = static_cast<int>(npyMMForce_rows);
-    int mm_coordDIM = static_cast<int>(npyMMForce_columns);
-    double mmForce[mm_num*mm_coordDIM] = {};
-    double* npyMMForce_cast = static_cast<double*>(PyArray_DATA(npyMMForce));
+        double* npyMMForce_cast = static_cast<double*>(PyArray_DATA(npyMMForce));
 
-    for (npy_intp i = 0; i < npyMMForce_rows; ++i) {
-        for (npy_intp j = 0; j < npyMMForce_columns; ++j) {
-            mmForce[i*3+j] = npyMMForce_cast[i * npyMMForce_columns + j];
+        for (size_t i = 0; i < numAtomsMM; ++i) {
+            for (size_t j = 0; j < 3; ++j) {
+                mmForce[i*3+j] = npyMMForce_cast[i * 3 + j];
+            }
         }
     }
+    
     // fprintf(stdout, "qm_num: %d, mm_num: %d\nqm_coordDIM: %d, mm_coordDIM: %d\nnumAtoms: %d\n", qm_num, mm_num, qm_coordDIM, mm_coordDIM, static_cast<int>(numAtoms));
 
     /*

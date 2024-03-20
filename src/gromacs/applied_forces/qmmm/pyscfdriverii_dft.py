@@ -27,9 +27,9 @@ def qmmmCalc(qmbasis, qmmult, qmcharge,
         qmatom = [kind] + coord
         qmatoms.append(qmatom)
 
-    # coords_gen_xyz("qm coords original", qmindex, qmkinds, qmcoords)
-    # coords_gen_xyz("qm coords modified", qmindex_link, qmkinds_link, qmcoords_link)
-    # coords_gen_xyz("mm coords", mmindex, mmkinds, mmcoords)
+    # coords_print_xyz("qm coords original", qmindex, qmkinds, qmcoords)
+    # coords_print_xyz("qm coords modified", qmindex_link, qmkinds_link, qmcoords_link)
+    # coords_print_xyz("mm coords", mmindex, mmkinds, mmcoords)
 
     # qmbasis = 'def2-SVP'
     mmradii = []
@@ -79,12 +79,12 @@ def qmmmCalc(qmbasis, qmmult, qmcharge,
     # print("mmforces", type(mmforces))
     # print("qmforces", type(qmforces))
     # print("energy", type(energy))
-    # coords_gen_xyz("qm forces",qmindex_link, qmkinds_link, qmforces)
-    # coords_gen_xyz("mm forces",mmindex, mmkinds, mmforces)
+    # coords_print_xyz("qm forces",qmindex_link, qmkinds_link, qmforces)
+    # coords_print_xyz("mm forces",mmindex, mmkinds, mmforces)
     [qmindex_force_corr, qmforces_link, mmforces_link] = link_force_corr(links, qmindex_link, qmkinds_link, qmforces, mmindex, mmkinds, mmforces)
     print(f'time for force coorection = {time.time() - tmf} seconds')
-    # coords_gen_xyz("qm forces modified", qmindex_force_corr, qmkinds_link, qmforces_link)
-    # coords_gen_xyz("mm forces modified", mmindex, mmkinds, mmforces_link)
+    # coords_print_xyz("qm forces modified", qmindex_force_corr, qmkinds_link, qmforces_link)
+    # coords_print_xyz("mm forces modified", mmindex, mmkinds, mmforces_link)
     print(f'time for this step = {time.time() - t0} seconds')
     return energy, qmforces_link, mmforces_link
     return qmcharge, qmcoords, mmcoords
@@ -124,7 +124,7 @@ def qmCalc(qmbasis, qmmult, qmcharge, qmkinds, qmcoords):
 def printProp(prop):
     print(prop)
 
-def coords_gen_xyz(xyzpropname, index, kinds, xyzprops):
+def coords_print_xyz(xyzpropname, index, kinds, xyzprops):
     print("--------------------", xyzpropname, "--------------------")
     for i in range(len(xyzprops)):
         print("%4s %4s %18.12f %18.12f %18.12f" % (index[i], kinds[i], xyzprops[i][0], xyzprops[i][1], xyzprops[i][2]))
