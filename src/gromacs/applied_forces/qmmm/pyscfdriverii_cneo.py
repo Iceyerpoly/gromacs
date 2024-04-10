@@ -111,17 +111,16 @@ def qmCalc(qmbasis, qmmult, qmcharge, qmkinds, qmcoords):
     qmbasis = 'aug-cc-pvdz'
     qmauxbasis = 'aug-cc-pvdz-ri'
 
-    mol = gto.M(atom=qmatoms, unit='ANG', basis=qmbasis, charge=qmcharge)
-    mf = dft.RKS(mol)
-    mf.xc = 'B3LYP'
-    mf = mf.density_fit(auxbasis=qmauxbasis)
+    mol = neo.M(atom=qmatoms, basis=qmbasis, nuc_basis='pb4d',
+                    quantum_nuc=['H'], charge=qmcharge)
+    mf = neo.CDFT(mol, df_ee=True, auxbasis_e=qmauxbasis)
+    mf.mf_elec.xc = 'B3LYP'
 
     energy = mf.kernel()
-    # dm = mf.make_rdm1()
 
-    qmgrad = mf.nuc_grad_method().kernel()
-    print(type(qmgrad), qmgrad)
-    qmforce = - qmgrad
+    g = mf.Gradients()
+    g_qm = g.grad()
+    qmforce = - g_qm
     print(f'time for this step = {time.time() - t0} seconds')
 
     return energy, qmforce

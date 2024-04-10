@@ -331,7 +331,7 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
         fprintf(stderr, "parsing pyscfCalcReturn error, pyobject pQMForce is nullptr\n");
     }
 
-    if (!pMMForce){
+    if ((!pMMForce) && (numAtomsMM > 0)){
         fprintf(stderr, "parsing pyscfCalcReturn error, pyobject pMMForce is nullptr\n");
     }
 
