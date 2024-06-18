@@ -1,30 +1,39 @@
 import unittest
 import numpy
 
-# import pyscf
 import time, copy
+import warnings
 from pyscf import lib, gto, scf, grad, dft, neo
 from pyscf.qmmm import itrf
 from pyscf.data import elements, radii, nist
 from pyscf.qmmm.mm_mole import create_mm_mol
+# import dftbplus
+import json
 
 # DEBUG = True
-QM_CHARGE = 0
+SYSTEM_CHARGE = 0
+QM_CHARGE = -1
 QM_MULT = 1
 QM_NUC_BASIS = "pb4d"
-QM_E_BASIS = "aug-cc-pvdz"
+QM_E_BASIS = {"default": "6-31G", "H~": "6-31++G**"}
 QM_E_BASIS_AUX = "aug-cc-pvdz-ri"
 QM_METHOD = "cneo"
-DFT_ELE_XC = "B3LYP"
+DFT_DF_FIT = False  # need to enable for each qmmmCalc and qmCalc function
+DFT_ELE_XC = "BLYP"
 LINK_MMHOST_NEIGHBOR_RANGE = 1.7
 MM_CHARGE_MODEL = "point"
+QMMM_CUT = 12  # Angstrom
 
-LINK_CHARGE_METHOD = "dist"
+LINK_CHARGE_CORR_METHOD = "global"
+LINK_COORD_CORR_METHOD = "flat"
+LINK_CORR_SCALE = 0.73
+LINK_COORD_RFLAT = 1.1
 LINK_PRINT_COORD_CORR = False
 LINK_PRINT_FORCE_CORR = False
-LINK_PRINT_CHARGE = False
+LINK_PRINT_CHARGE_CORR = True
 LINK_PRINT_MMHOST_NEIGHBOR = False
 QMMM_PRINT = False
+QM_XYZ = False
 
 
 def qmmmCalc(
@@ -40,83 +49,186 @@ def qmmmCalc(
     mmcoords,
     links,
 ):
+    # print(f"gmxstep is {gmxstep}")
     t0 = time.time()
 
-    [qmkinds_link, qmcoords_link, qmindex_link] = link_coord_corr(
-        links, qmindex, qmkinds, qmcoords, mmindex, mmkinds, mmcoords
+    # Generate link atoms coordinates, and
+    # extend kinds, coords, and index lists of qm atoms. Default mode:
+
+    # qmindex=QMINDEX
+    # mmindex=MMINDEX
+    # links=LINKINDEX
+    # f_mmcharges = 'f_mmcharge'
+    # f = open(f_mmcharges, 'w')
+    # for mmcharge in mmcharges:
+    #     f.write(mmcharge)
+    # f.close()
+    # print(f'{mmcharges=}')
+    # print(f'{mmkinds=}')
+    # print(f'{mmindex=}')
+    # print(f'{mmcoords=}')
+    # print(f'{qmindex=}')
+    # print(f'{qmkinds=}')
+    # print(f'{qmcoords=}')
+    print(f"{links=}")
+
+    # with open('f_mmcharges.json', 'w') as f_mmcharges:
+    #     json.dump(mmcharges, f_mmcharges, indent=2)
+    # with open('f_mmcoords.json', 'w') as f:
+    #     json.dump(mmcoords, f, indent=2)
+    # with open('f_qmcoords.json', 'w') as f:
+    #     json.dump(qmcoords, f, indent=2)
+    # with open('f_qmkinds.json', 'w') as f:
+    #     json.dump(qmkinds, f, indent=2)
+    # with open('f_qmkindex.json', 'w') as f:
+    #     json.dump(qmindex, f, indent=2)
+
+    # print("qmindex")
+    # [print(f'{qmindex[i]} {qmkinds[i]}') for i in range(len(qmindex))]
+    # print("mmindex")
+    # [print(f'{mmindex[i]} {mmkinds[i]}') for i in range(len(mmindex))]
+    # [print(f'{i}th link, qmhost {links[i][0]} mmhost {links[i][1]}') for i in range(len(links))]
+
+    # print(f"{qmindex=}")
+    # print(f"{mmindex=}")
+    # print(f"{links=}")
+    # prop_print_xzy('QM atoms', qmindex, qmkinds, qmcoords)
+    # prop_print_xzy('MM atoms', mmindex, mmkinds, mmcoords)
+
+    [qmkinds_link, qmcoords_link, qmindex_link, link_scale] = link_coord_corr(
+        links,
+        qmindex,
+        qmkinds,
+        qmcoords,
+        mmindex,
+        mmkinds,
+        mmcoords,
+        printflag=LINK_PRINT_COORD_CORR,
+        method=LINK_COORD_CORR_METHOD,
+        rflat0=LINK_COORD_RFLAT,
+        scale0=LINK_CORR_SCALE,
     )
 
-    qmnucindex = []  # marks the
+    # Generate qmatoms list for pyscf input
+    # make a list of H atoms in the qm atoms.
+    qmHindex = []
     qmatoms = []
     qmlocalindex = 0
     for kind, coord in zip(qmkinds_link, qmcoords_link):
         qmatom = [kind] + coord
         qmatoms.append(qmatom)
         if kind.strip().upper() == "H":
-            qmnucindex.append(qmlocalindex)
+            qmHindex.append(qmlocalindex)
         qmlocalindex = qmlocalindex + 1
+    # Generate the list of quantum nuclei for CNEO or NEO calculation.
+    # The last (# of links H atoms) are link atoms, therefore should be
+    # removed from the list of quantum nuclei for CNEO calculation
+    qmnucindex = qmHindex[: -len(links)]
 
-    mmcharges_redist = copy.deepcopy(mmcharges)
-    for link in links:
-        neighbor_index = []
-        hostindex = link[1]
-
-        hostcoord = mmcoords[mmindex.index(hostindex)]
-        neighbor_index = neighborlist_gen(
-            hostcoord=hostcoord,
-            coords=mmcoords,
-            index=mmindex,
-            bondthreshold=LINK_MMHOST_NEIGHBOR_RANGE,
+    # Redistribute the classical QM and MM link host charges.
+    # Default mode: spread the residue classical charge over the MM
+    # atoms less MM link host atoms, i.e., QM atoms and MM link host
+    # atoms are "zeroed-out". This is the only mode currently implemented
+    tc0 = time.time()
+    mmcharges = link_charge_corr(
+            mmcharges,
+    mmindex,
+    links,
+    QM_CHARGE,
+    SYSTEM_CHARGE,
+    printflag=LINK_PRINT_CHARGE_CORR,
+    charge_corr_mode=LINK_CHARGE_CORR_METHOD,
+    mmcoords=mmcoords,
+    mmkinds=mmkinds,
+    mmneighbor_thrsh=1.7)
+    print(f' time for charge correction, {time.time() - tc0}')
+    mmindex_incut = numpy.array([], dtype=int)
+    for qmcoord in qmcoords:
+        cut_ind = numpy.flatnonzero(
+            lib.norm(qmcoord - numpy.array(mmcoords), axis=1) <= QMMM_CUT
         )
-        if LINK_PRINT_MMHOST_NEIGHBOR == True:
-            print("mm host index", hostindex)
-            print("mm host's neighbor's index", neighbor_index)
+        # print(f"{cut_ind=}")
+        mmindex_incut = numpy.unique(numpy.concatenate((mmindex_incut, cut_ind)))
 
-        if len(neighbor_index) < 1:
-            raise Exception(
-                "no neighbors to MM host's charge, "
-                "consider increase LINK_MMHOST_NEIGHBOR_RANGE"
-            )
+    mmkinds_incut = numpy.array(mmkinds)[mmindex_incut]
+    mmcharges_incut = numpy.array(mmcharges)[mmindex_incut]
+    mmcoords_incut = numpy.array(mmcoords)[mmindex_incut]
 
-        mmcharges_redist = charge_redist(
-            hostindex,
-            neighbor_index=neighbor_index,
-            mmindex=mmindex,
-            mmcharges=mmcharges_redist,
-        )
-    mmcharges = mmcharges_redist
-
+    with open("f_mmcharges_incut.npy", "wb") as f:
+        numpy.save(f, mmcharges_incut)
+    with open("f_mmkinds_incut.npy", "wb") as f:
+        numpy.save(f, mmkinds_incut)
+    with open("f_mmcoords_incut.npy", "wb") as f:
+        numpy.save(f, mmcoords_incut)
+    # MM charge model: Gaussian charge or point charge. Point
+    # charge model for MM atoms is just Gaussian charge
+    # model with exceptionally short radii: 1e-8 Bohr.
     mmradii = []
-    for kind in mmkinds:
+    for kind in mmkinds_incut:
         charge = elements.charge(kind)
         if MM_CHARGE_MODEL.lower()[0:5] == "gauss":
             mmradii.append(radii.COVALENT[charge] * nist.BOHR)
         if MM_CHARGE_MODEL.lower() == "point":
             mmradii.append(1e-8 * nist.BOHR)
 
-    numlink = len(links)
     if QMMM_PRINT == True:
-        print("qm nuc index:", qmnucindex[:-numlink])
+        print("qm region H index:", qmHindex)
+        print("qm nuc index:", qmnucindex)
         print("mmcharges\n", mmcharges)
         print("mmcoords\n", mmcoords)
         print("qmatomds\n", qmatoms)
         print(f"method we used in this calc is {QM_METHOD}")
         print(mmradii)
 
+    # print(f'{qmatoms=}')
+
+    if QM_XYZ == True:
+            with open('qm.xyz', 'w') as f:
+                f.write(str(len(qmatoms))+f'\n QM xyz at step {gmxstep}\n')
+                for i in range(len(qmatoms)):
+                    f.write(f'{qmatoms[i][0]} {qmatoms[i][1]} {qmatoms[i][2]} {qmatoms[i][3]}\n')
+
     if QM_METHOD.upper() == "CNEO":
-        [energy, qmforces, mmforces] = qmmmCalc_cneo(
-            qmatoms, mmcoords, mmcharges, mmradii, qmnucindex[:-numlink]
+        # qmatoms[25][0] = 'H~'
+        [energy, qmforces, mmforces_incut] = qmmmCalc_cneo(
+            qmatoms, mmcoords_incut, mmcharges_incut, mmradii, qmnucindex
         )
     elif QM_METHOD.upper() == "DFT":
-        [energy, qmforces, mmforces] = qmmmCalc_dft(
-            qmatoms, mmcoords, mmcharges, mmradii
+        # qmatoms[25][0] = 'H~'
+        [energy, qmforces, mmforces_incut] = qmmmCalc_dft(
+            qmatoms, mmcoords_incut, mmcharges_incut, mmradii
         )
 
-    [qmindex_force_corr, qmforces_link, mmforces_link] = link_force_corr(
-        links, qmindex_link, 
-        qmkinds_link, qmforces, mmindex, mmkinds, mmforces
-    )
+    elif QM_METHOD.upper() == "DFTB":
+        if os.path.isfile("qm.xyz"):
+            pass
+        else:
+            with open('qm.xyz', 'w') as f:
+                f.write(str(len(qmatoms))+'\nfake QM xyz\n')
+                for i in range(len(qmatoms)):
+                    f.write(f'{qmatoms[i][0]} {0.0} {0.0} {0.0}\n')
+        [energy, qmforces, mmforces_incut] = qmmmCalc_dftb(
+            qmcoords_link, mmcoords_incut, mmcharges_incut)
 
+    mmforces = numpy.zeros((len(mmindex), 3))
+    mmforces[mmindex_incut] = mmforces_incut
+
+    # force correction, partition the force on link atoms to
+    # its host atoms with chain rule
+    [qmindex_force_corr, qmforces_link, mmforces_link] = link_force_corr(
+        links,
+        qmindex_link,
+        qmkinds_link,
+        qmforces,
+        mmindex,
+        mmkinds,
+        mmforces,
+        link_scale,
+        printflag=LINK_PRINT_FORCE_CORR,
+    )
+    # energy = 0
+    # qmforces_link = numpy.array([[0.000, 0.000, 0.000] for x in range(len(qmkinds))])
+    # mmforces_link = numpy.array([[0.000, 0.000, 0.000] for x in range(len(mmkinds))])
     print(f"time for this step = {time.time() - t0} seconds")
 
     return energy, qmforces_link, mmforces_link
@@ -130,13 +242,13 @@ def qmCalc(qmbasis, qmmult, qmcharge, qmkinds, qmcoords):
         qmatom = [kind] + coord
         qmatoms.append(qmatom)
     if QM_METHOD.upper() == "CNEO":
-        [energy, qmforces, mmforces] = qmCalc_cneo(qmatoms)
+        [energy, qmforces] = qmCalc_cneo(qmatoms)
     elif QM_METHOD.upper() == "DFT":
-        [energy, qmforces, mmforces] = qmCalc_dft(qmatoms)
+        [energy, qmforces] = qmCalc_dft(qmatoms)
 
     print(f"time for this step = {time.time() - t0} seconds")
 
-    return energy, qmforce
+    return energy, qmforces
 
 
 def qmCalc_cneo(qmatoms):
@@ -187,6 +299,9 @@ def qmmmCalc_cneo(qmatoms, mmcoords, mmcharges, mmradii, qmnucindex):
         charge=QM_CHARGE,
     )
     # energy
+    # print("mol_neo quantum_nuc", mol_neo.quantum_nuc)
+    # print(qmatoms)
+    # print(qmnucindex)
     mf = neo.CDFT(mol_neo, df_ee=True, auxbasis_e=QM_E_BASIS_AUX)
     mf.mf_elec.xc = DFT_ELE_XC
     energy = mf.kernel()
@@ -212,11 +327,12 @@ def qmmmCalc_cneo(qmatoms, mmcoords, mmcharges, mmradii, qmnucindex):
 def qmmmCalc_dft(qmatoms, mmcoords, mmcharges, mmradii):
     t0 = time.time()
 
-    mol = gto.M(atom=qmatoms, unit="ANG", basis=QM_E_BASIS,
-                charge=QM_CHARGE)
+    mol = gto.M(atom=qmatoms, unit="ANG", basis=QM_E_BASIS, charge=QM_CHARGE)
     mf_dft = dft.RKS(mol)
     mf_dft.xc = DFT_ELE_XC
-    mf_dft = mf_dft.density_fit(auxbasis=QM_E_BASIS_AUX)
+
+    if DFT_DF_FIT == True:
+        mf_dft = mf_dft.density_fit(auxbasis=QM_E_BASIS_AUX)
     mf = itrf.mm_charge(mf_dft, mmcoords, mmcharges, mmradii)
 
     energy = mf.kernel()
@@ -224,8 +340,7 @@ def qmmmCalc_dft(qmatoms, mmcoords, mmcharges, mmradii):
     print(f"time for energy = {te - t0} seconds")
 
     dm = mf.make_rdm1()
-    mf_grad = itrf.mm_charge_grad(grad.RKS(mf),
-                                  mmcoords, mmcharges, mmradii)
+    mf_grad = itrf.mm_charge_grad(grad.RKS(mf), mmcoords, mmcharges, mmradii)
     qmforces = -mf_grad.kernel()
     tqf = time.time()
     print(f"time for qm force = {tqf - te} seconds")
@@ -245,149 +360,279 @@ def printProp(prop):
     print(prop)
 
 
-def coords_gen_xyz(xyzpropname, index, kinds, xyzprops):
+def prop_print_xzy(xyzpropname, index, kinds, xyzprops):
     print("--------------------", xyzpropname, "--------------------")
     for i in range(len(xyzprops)):
         print(
             "%4s %4s %18.12f %18.12f %18.12f"
-            % (index[i], kinds[i], xyzprops[i][0],
-               xyzprops[i][1], xyzprops[i][2])
+            % (index[i], kinds[i], xyzprops[i][0], xyzprops[i][1], xyzprops[i][2])
         )
 
 
-def link_coord_corr(links, qmindex, qmkinds,
-                    qmcoords, mmindex, mmkinds, mmcoords):
+def link_coord_corr(
+    links,
+    qmindex,
+    qmkinds,
+    qmcoords,
+    mmindex,
+    mmkinds,
+    mmcoords,
+    printflag=False,
+    method="scale",
+    rflat0=1.10,
+    scale0=0.73,
+):
 
     qmindex_link = qmindex[:]
     qmkinds_link = qmkinds[:]
     qmcoords_link = qmcoords[:]
+    # Can warn user if the scale factor is out of the range 0~1
+    if printflag == True:
+        print("qm global index", qmindex)
+        print("mm global index", mmindex)
+        print(
+            "there are",
+            len(links),
+            "links to be processed:\n[QM host global index, MM host global index]:",
+        )
+        [print(link) for link in links]
+        print(f"the method for generating link atom coordinate is {method}")
 
-    if LINK_PRINT_COORD_CORR == True:
-        print("qm index", qmindex)
-        print("mm index", mmindex)
-        print(qmcoords)
-        numpy.set_printoptions(precision=6)
-        print("there are", len(links), "links to be processed")
-
+    link_scale = []
+    # link_scale will be useful when partitioning forces on link
+    # atoms, paritcularly when r(QMhost_link)/r(QMhost_MMhost) is
+    # not the same for all links, i.e., costomized scale (to be
+    # implemented) for each link or using a flat r(QMhost_link)
     for i in range((len(links))):
         link_coord = [0.000, 0.000, 0.000]
         qmindex_link.append("L" + str(i))
-        qm_c_index = qmindex.index(links[i][0])
-        mm_c_index = mmindex.index(links[i][1])
-        qm_host_coord = numpy.array(qmcoords[qm_c_index])
-        mm_host_coord = numpy.array(mmcoords[mm_c_index])
-        alpha = 1.38  
-        # need to enable user defined alpha(scaling factor) later
-        alpha_rec = 1 / alpha
-        link_coord = alpha_rec * mm_host_coord + (1 - alpha_rec) * qm_host_coord
+        qm_group_index = qmindex.index(links[i][0])
+        mm_group_index = mmindex.index(links[i][1])
+        qm_host_coord = numpy.array(qmcoords[qm_group_index])
+        mm_host_coord = numpy.array(mmcoords[mm_group_index])
+        if method.lower() == "scale":
+            # In the "scale" method, link atom is placed along the QMhost-MMhost
+            # bond, and its distance to QMhost is scale0*r_mm_qm
+            # We can enable user defined (scaling factor) later, but
+            # this feature is secondary compared to user-defined link atom kind
+            link_coord = scale0 * mm_host_coord + (1 - scale0) * qm_host_coord
+            link_scale.append(scale0)
+        if method.lower() == "flat":
+            # In the "flat" method, link atom is placed along the QMhost-MMhost
+            # bond, and its distance to QMhost is set to be
+            # a constant, for all links
+            scale = 0
+            r_mm_qm = mm_host_coord - qm_host_coord
+            d_mm_qm = numpy.linalg.norm(r_mm_qm)
+            scale = rflat0 / d_mm_qm
+            link_scale.append(scale)
+            link_coord = scale * mm_host_coord + (1 - scale) * qm_host_coord
         link_coord = list(link_coord)
-        qmkinds_link.append("H  ")  
-        # need to enable user defined link atom kind later
+        qmkinds_link.append("H  ")
+        # We'd better enable user defined link atom kind later
         qmcoords_link.append(link_coord)
-        if LINK_PRINT_COORD_CORR == True:
-            print(i + 1, "th link is between [QM, MM] =", links[i])
-            print("link" "s qm host collective index",
-                  qmindex.index(links[i][0]))
-            print("link" "s mm host collective index",
-                  mmindex.index(links[i][1]))
-            print(f"qm host atom is {qmkinds[qm_c_index]}, "
-                  f"coordinate: {qm_host_coord}")
-            print(f"mm host atom is {mmkinds[mm_c_index]}, "
-                  f"coordinate: {mm_host_coord}")
+        if printflag == True:
+            print(
+                i + 1,
+                "th link is between [QM host global index, MM host global index] =",
+                links[i],
+            )
+            print("link" "s qm host in-group index", qmindex.index(links[i][0]))
+            print("link" "s mm host in-group index", mmindex.index(links[i][1]))
+            print(
+                f"qm host atom is {qmkinds[qm_group_index]}, "
+                f"coordinate: {qm_host_coord}"
+            )
+            print(
+                f"mm host atom is {mmkinds[mm_group_index]}, "
+                f"coordinate: {mm_host_coord}"
+            )
             print(f"link atom is H , coordinate: {link_coord}")
+            print(
+                f"crossing bond length is {d_mm_qm} ang,\nand the scale factor for this link is {link_scale[i]}"
+            )
 
-    if LINK_PRINT_COORD_CORR == True:
-        coords_gen_xyz("qm coords original", qmindex, qmkinds, qmcoords)
-        coords_gen_xyz("qm coords modified", qmindex_link, qmkinds_link,
-                       qmcoords_link)
-        coords_gen_xyz("mm coords", mmindex, mmkinds, mmcoords)
+    if printflag == True:
+        prop_print_xzy("qm coords original", qmindex, qmkinds, qmcoords)
+        prop_print_xzy("qm coords modified", qmindex_link, qmkinds_link, qmcoords_link)
+        prop_print_xzy("mm coords", mmindex, mmkinds, mmcoords)
 
-    return qmkinds_link, qmcoords_link, qmindex_link
+    return qmkinds_link, qmcoords_link, qmindex_link, link_scale
 
 
-def link_force_corr(links, qmindex, qmkinds, qmforces, mmindex,
-                    mmkinds, mmforces):
-    if LINK_PRINT_FORCE_CORR == True:
-        coords_gen_xyz("qm forces origin", qmindex, qmkinds, qmforces)
-        coords_gen_xyz("mm forces origin", mmindex, mmkinds, mmforces)
+def link_force_corr(
+    links,
+    qmindex,
+    qmkinds,
+    qmforces,
+    mmindex,
+    mmkinds,
+    mmforces,
+    link_scale,
+    printflag=False,
+):
+    if printflag == True:
+        prop_print_xzy("qm forces origin", qmindex, qmkinds, qmforces)
+        prop_print_xzy("mm forces origin", mmindex, mmkinds, mmforces)
 
     linkcount = 0
     for i in range((len(links))):
         linkcount = linkcount + 1
         linkindex = "L" + str(i)
 
-        qm_c_index = qmindex.index(links[i][0])
-        mm_c_index = mmindex.index(links[i][1])
-        link_c_index = qmindex.index(linkindex)
-
-        alpha = 1.38
-        alpha_rec = 1 / alpha
-        link_force = qmforces[link_c_index]
-        qm_link_force_partition = link_force * (1 - alpha_rec)
-        mm_link_force_partition = link_force * alpha_rec
-        qmforces[qm_c_index] += qm_link_force_partition
-        mmforces[mm_c_index] += mm_link_force_partition
-
-        if LINK_PRINT_FORCE_CORR == True:
-            print(linkcount, "th link is between [QM, MM] =", links[i])
-            print("link" "s qm host collective index", qm_c_index)
-            print("link" "s mm host collective index", mm_c_index)
-            print("link" "s collective index", link_c_index)
+        qm_group_index = qmindex.index(links[i][0])
+        mm_group_index = mmindex.index(links[i][1])
+        link_group_index = qmindex.index(linkindex)
+        # link_scale are calculated for each link when generating
+        # link atom coordinates, and this dependence of a link atom's
+        # coordinate on its hosts' coordinates is used to partition
+        # that link atoms' force through chain rule
+        link_force = qmforces[link_group_index]
+        qm_link_force_partition = link_force * (1 - link_scale[i])
+        mm_link_force_partition = link_force * link_scale[i]
+        qmforces[qm_group_index] += qm_link_force_partition
+        mmforces[mm_group_index] += mm_link_force_partition
+        if printflag == True:
+            print(f"the force between the {i+1} th pair")
             print(
-                "link atom: kind",
-                qmkinds[link_c_index],
-                ", force: ",
-                link_force,
-                ", paritions: qm:",
-                qm_link_force_partition,
-                ", mm:",
-                mm_link_force_partition,
+                f"[QM host global index, MM host global index] = {links[i]} is\n{link_force}"
+            )
+            print(
+                f"the scale factor is {link_scale[i]} for MM host and {1-link_scale[i]} for QM host"
+            )
+            print(
+                f"QM host parition: {qm_link_force_partition}\nMM host partition: {mm_link_force_partition}"
             )
 
     for i in range((len(links))):
         linkindex = "L" + str(i)
-        link_c_index = qmindex.index(linkindex)
+        link_group_index = qmindex.index(linkindex)
         qmindex.remove(linkindex)
-        qmforces = numpy.delete(qmforces, link_c_index, 0)
+        qmforces = numpy.delete(qmforces, link_group_index, 0)
 
-    if LINK_PRINT_FORCE_CORR == True:
-        coords_gen_xyz("qm forces corrected", qmindex, qmkinds, qmforces)
-        coords_gen_xyz("mm forces corrected", mmindex, mmkinds, mmforces)
+    if printflag == True:
+        prop_print_xzy("qm forces corrected", qmindex, qmkinds, qmforces)
+        prop_print_xzy("mm forces corrected", mmindex, mmkinds, mmforces)
 
     return qmindex, qmforces, mmforces
 
-
-def neighborlist_gen(hostcoord, coords, index, bondthreshold):
-
-    neighbor_index = []
-    for coord in coords:
-        dist = numpy.linalg.norm(numpy.array(coord) - numpy.array(hostcoord))
-        if dist < bondthreshold and dist > 0.1:
-            index[coords.index(coord)]
-            neighbor_index.append(index[coords.index(coord)])
-
-    return neighbor_index
-
-
-def charge_redist(hostindex, neighbor_index, mmindex,
-                  mmcharges, redist="shift"):
+def link_charge_corr(
+    mmcharges,
+    mmindex,
+    links,
+    qm_charge,
+    system_charge,
+    printflag,
+    charge_corr_mode='global',
+    mmcoords=[],
+    mmkinds=[],
+    mmneighbor_thrsh=1.7,
+):
 
     mmcharges_redist = copy.deepcopy(mmcharges)
-    hostcharge = mmcharges[mmindex.index(hostindex)]
-    if LINK_CHARGE_METHOD == True:
-        print(redist)
-        print(f"hostindex, {hostindex}, hostcharge, {hostcharge}")
-    mmcharges_redist[mmindex.index(hostindex)] = 0
-    if redist.lower() != "del":
-        for i in neighbor_index:
-            mmcharges_redist[mmindex.index(i)] += \
-            hostcharge / len(neighbor_index)
+
+    mmhostindex_global = [link[1] for link in links]
+    mmhostindex_group = [mmindex.index(i) for i in mmhostindex_global]
+    mmhostcharges = [mmcharges[i] for i in mmhostindex_group]
+
+    if printflag == True:
+        [
+            print(
+                f"mmhost global index {mmhostindex_global[i]}, in-group index {mmhostindex_group[i]}, and the mmhost charge {mmhostcharges[i]}"
+            )
+            for i in range(len(links))
+        ]
+
+    if charge_corr_mode.lower()[0:3] == 'glo':
+        charge_total_qm_classical = system_charge - sum(mmcharges)
+        # total_qm_classical_charge + total_mm_classical_charge = system_charge (interger)
+        charge_total_mm_host = sum(mmhostcharges)
+        # mm hosts classical charges are also spread out to the rest of mm atoms
+        charge_zeroed_out = charge_total_mm_host + charge_total_qm_classical
+        # residue charge to be spread out over the rest of mm atoms
+        charge_corr_total = charge_zeroed_out - qm_charge
+
+        if (len(mmcharges) - len(mmhostcharges)) < 1:
+            raise RuntimeError("there is no mm atoms left to spread the charge correction")
+        chargecorr = charge_corr_total / (len(mmcharges) - len(mmhostcharges))
+
+        for i in range(len(mmcharges_redist)):
+            charge = mmcharges_redist[i]
+            # if LINK_PRINT_CHARGE_CORR == True:
+            #     print("mmcharge in-group index", i, "charge of mmhost", charge)
+            if i in mmhostindex_group:
+                # if LINK_PRINT_CHARGE_CORR == True:
+                #     print("mmhost in-group index", i, "charge of mmhost", charge)
+                mmcharges_redist[i] = 0.000
+            else:
+                mmcharges_redist[i] += chargecorr
+
+        if printflag == True:
+            print(f"total qm classical charge: {charge_total_qm_classical:10.4f}")
+            print(f"+ total mm host charge {charge_total_mm_host:10.4f}")
+            print(f"= total zeroed-out classical charge {charge_zeroed_out:10.4f}")
+            print(
+                f"- (qm charge : {qm_charge}) = total charge to spread over the remaining mm atoms {charge_corr_total:10.4f}"
+            )
+            print("remaining mm atom number", (len(mmcharges) - len(mmhostcharges)))
+            print(f"each remaining mm atom adds {chargecorr:10.4f}")
+
+            # [
+            #     print(
+            #         f"global index {mmindex[i]:3d}, in-group index {mmindex.index(mmindex[i]):3d}, original charge {mmcharges[i]:10.4f}, correted charge {mmcharges_redist[i]:10.4f}"
+            #     )
+            #     for i in range(len(mmcharges))
+            # ]
+    elif charge_corr_mode.lower()[0:3] == 'loc':
+        print("mmhost charges will be distributed to its neighbors")
+        if len(mmcoords) != len(mmcharges):
+            raise Exception("mmcoords length does not match mmcharges, did you forget to input or input the wrong mmcoords for mmhost local charge distribution?")
+        if len(mmkinds) != len(mmcharges):
+            raise Exception("mmkinds length does not match mmcharges, did you forget to input or input the wrong mmkinds?")
+        for link in links:
+            mmhost_groupindex = mmindex.index(link[1])
+            mmhost_coord = mmcoords[mmhost_groupindex]
+            hostcharge = mmcharges_redist[mmhost_groupindex]
+            if abs(hostcharge) > 0.2:
+                warnings.warn("mmhost charge is higher than 0.2, is the link's choice appropriate?")
+            mmcharges_redist[mmhost_groupindex] = 0
+            mmneighbor_index = []
+            mmneighbor_dists = []
+            mmneighbor_kinds = []
+            for i in range(len(mmcoords)):
+                dist = numpy.linalg.norm(numpy.array(mmcoords[i]) - numpy.array(mmhost_coord))
+                if dist < mmneighbor_thrsh and dist > 0.1:
+                    mmneighbor_index.append(mmindex[i])
+                    mmneighbor_dists.append(dist)
+                    mmneighbor_kinds.append(mmkinds[i])
+            mmneighbor_charges=[]
+            mmneighbor_charges0=[]
+            mmneighbor_num=len(mmneighbor_index)
+            for i in mmneighbor_index:
+                j = mmindex.index(i)
+                mmcharges_redist[j] += hostcharge/mmneighbor_num
+                mmneighbor_charges.append(mmcharges_redist[j])
+                mmneighbor_charges0.append(mmcharges[j])
+            if printflag == True:
+                print(f"{link=}")
+                print(f"{mmhost_coord=}")
+                print(f"mmhost is a {mmkinds[mmhost_groupindex]} containing {mmcharges[mmhost_groupindex]}, current charge {mmcharges_redist[mmhost_groupindex]}")
+                print(f'{mmneighbor_index=}')
+                print(f'{mmneighbor_dists=}')
+                print(f'{mmneighbor_kinds=}')
+                print(f'{mmneighbor_charges=}')
+                print(f'{mmneighbor_charges0=}')
+    else:
+        if charge_corr_mode.lower()[0:3] != 'del':
+            warnings.warn("charge correction method cannot be parsed, delete all mmhost charges")
+        for i in mmhostindex_group:
+            mmcharges_redist[i] = 0
+        [print(f"{mmcharges[i]=}") for i in mmhostindex_group]
+        [print(f"{mmcharges_redist[i]=}") for i in mmhostindex_group]
 
     return mmcharges_redist
 
-
 if __name__ == "__main__":
-    # qmbasis = '631G'
     # qmmult = 1
     # qmcharge = 0
     # qmkinds = ['O','H', 'H']
@@ -453,22 +698,46 @@ if __name__ == "__main__":
     ]
     links = [[0, 1], [5, 4]]
 
-    # output = link_coord_corr(links, qmindex, qmkinds, qmcoords, mmindex, mmkinds, mmcoords)
-    # print(output[0], output[1])
-    [energy, qmforce, mmforce] = qmmmCalc(
-        qmbasis,
-        qmmult,
-        qmcharge,
-        qmindex,
-        qmkinds,
-        qmcoords,
-        mmindex,
-        mmkinds,
-        mmcharges,
-        mmcoords,
-        links,
+    qmkinds_link, qmcoords_link, qmindex_link = link_coord_corr(
+        links, qmindex, qmkinds, qmcoords, mmindex, mmkinds, mmcoords
     )
+    atoms = []
+    coords = mmcoords + qmcoords_link
+    indeces = mmindex + qmindex_link
+    kinds = mmkinds + qmkinds_link
+    for kind, coord, index in zip(kinds, coords, indeces):
+        atom = [kind] + coord + [index]
+        atoms.append(atom)
+    prop_print_xzy("xyz file", [" " for x in range(len(kinds))], kinds, coords)
+    prop_print_xzy(
+        "coord_link_flat",
+        [" " for x in range(len(qmkinds_link))],
+        qmkinds_link,
+        qmcoords_link,
+    )
+    # [energy, qmforce, mmforce] = qmmmCalc(
+    #     qmbasis,
+    #     qmmult,
+    #     qmcharge,
+    #     qmindex,
+    #     qmkinds,
+    #     qmcoords,
+    #     mmindex,
+    #     mmkinds,
+    #     mmcharges,
+    #     mmcoords,
+    #     links,
+    # )
+
+    # atoms = []
+    # coords = mmcoords + qmcoords
+    # indeces = mmindex + qmindex
+    # kinds = mmkinds + qmkinds
+    # for kind, coord, index in zip(kinds, coords, indeces):
+    #     atom = [kind] + coord + [index]
+    #     atoms.append(atom)
+
+    # prop_print_xzy("xyz file", indeces, kinds, coords)
     # print(energy)
     # print(type(qmforce), qmforce)
     # print(type(mmforce), mmforce)
-    # qmmmCalcNEO(qmbasis, qmmult, qmcharge, qmkinds, qmcoords, mmkinds, mmcharges, mmcoords)
