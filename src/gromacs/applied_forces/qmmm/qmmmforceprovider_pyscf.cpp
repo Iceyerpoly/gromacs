@@ -140,13 +140,13 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
         }
         GMX_CATCH_ALL_AND_EXIT_WITH_FATAL_ERROR;
     }
-    fprintf(stderr, "Importing pyscfdriverii...\n");
-    PyObject* pModule = PyImport_ImportModule("pyscfdriverii");
+    fprintf(stderr, "Importing pyscfdriver...\n");
+    PyObject* pModule = PyImport_ImportModule("pyscfdriver");
     if (!pModule)
     {
-        GMX_THROW(gmx::InternalError("pyscfdriverii load failed!\n"));
+        GMX_THROW(gmx::InternalError("pyscfdriver load failed!\n"));
     }
-    fprintf(stderr, "pyscfdriverii load successful!\n");
+    fprintf(stderr, "pyscfdriver load successful!\n");
 
     // Total number of atoms in the system
     size_t numAtoms   = qmAtoms_.numAtomsGlobal() + mmAtoms_.numAtomsGlobal();
@@ -333,7 +333,7 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
             PyList_SetItem(pyMMCoords, i, pyCoords_row);
         }
         pyscfCalcReturn = PyObject_CallFunctionObjArgs(pFuncCalc,
-                                                    //    pyStepNumber,
+                                                       pyStepNumber,
                                                        pyQMBasis,
                                                        pyQMMult,
                                                        pyQMCharge,
