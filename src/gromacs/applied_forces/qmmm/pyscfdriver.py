@@ -16,15 +16,15 @@ QM_MULT = 1
 QM_NUC_BASIS = "pb4d"
 QM_E_BASIS = "aug-cc-pvdz"
 QM_E_BASIS_AUX = "aug-cc-pvdz-ri"
-QM_METHOD = "cneo"
+QM_METHOD = "cneo" # select from {'cneo', 'dft'}
 DFT_DF = True
 DFT_E_XC = "B3LYP"
 LINK_MMHOST_NEIGHBOR_RANGE = 1.7
-MM_CHARGE_MODEL = "point"
+MM_CHARGE_MODEL = "point" # select from {'point', 'gaussian'}
 QMMM_CUT = 10 # Angstrom
 
-LINK_CHARGE_CORR_METHOD = "dist"
-LINK_COORD_CORR_METHOD = "scale"
+LINK_CHARGE_CORR_METHOD = "global" # select from {'global', 'local', 'delete'}
+LINK_COORD_CORR_METHOD = "scale" # select from {'scale', 'flat'}
 LINK_COORD_SCALE = 0.7246
 LINK_COORD_RFLAT = 1.1
 LINK_PRINT_COORD_CORR = False
@@ -657,7 +657,9 @@ def link_charge_corr(
                 print(f'{mmneighbor_charges0=}')
     else:
         if charge_corr_mode.lower()[0:3] != 'del':
-            warnings.warn("charge correction method cannot be parsed, delete all mmhost charges")
+            warnings.warn("charge correction method cannot be parsed, delete all mmhost charges.")
+        else:
+            print('mmhost charges will be deleted.')
         for i in mmhostindex_group:
             mmcharges_redist[i] = 0
         [print(f"{mmcharges[i]=}") for i in mmhostindex_group]
