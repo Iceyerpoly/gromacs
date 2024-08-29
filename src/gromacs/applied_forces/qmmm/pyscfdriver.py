@@ -2,7 +2,7 @@ import unittest
 import numpy
 
 # import pyscf
-import time, copy, os
+import time, copy, os, warnings
 from pyscf import lib, gto, scf, grad, dft, neo, lo
 from pyscf.qmmm import itrf
 from pyscf.data import elements, radii, nist
@@ -17,15 +17,15 @@ QM_NUC_BASIS = "pb4d"
 QM_E_BASIS = "aug-cc-pvdz"
 QM_E_BASIS_AUX = "aug-cc-pvdz-ri"
 QM_METHOD = "cneo"
-DFT_DF_FIT = True
-DFT_ELE_XC = "B3LYP"
+DFT_DF = True
+DFT_E_XC = "B3LYP"
 LINK_MMHOST_NEIGHBOR_RANGE = 1.7
 MM_CHARGE_MODEL = "point"
 QMMM_CUT = 10 # Angstrom
 
 LINK_CHARGE_CORR_METHOD = "dist"
 LINK_COORD_CORR_METHOD = "scale"
-LINK_CORR_SCALE = 0.7246
+LINK_COORD_SCALE = 0.7246
 LINK_COORD_RFLAT = 1.1
 LINK_PRINT_COORD_CORR = False
 LINK_PRINT_FORCE_CORR = False
@@ -66,7 +66,7 @@ def qmmmCalc(
         printflag=LINK_PRINT_COORD_CORR,
         method=LINK_COORD_CORR_METHOD,
         rflat0=LINK_COORD_RFLAT,
-        scale0=LINK_CORR_SCALE,
+        scale0=LINK_COORD_SCALE,
     )
     if gmxstep == 0 or gmxstep == -1:
         prop_print_xzy('QM atoms', qmindex_link, qmkinds_link, qmcoords_link)
@@ -205,11 +205,11 @@ def qmCalc_cneo(qmatoms):
         quantum_nuc=["H"],
         charge=QM_CHARGE,
     )
-    if DFT_DF_FIT == True:
+    if DFT_DF == True:
         mf = neo.CDFT(mol, df_ee=True, auxbasis_e=QM_NUC_BASIS)
     else:
         mf = neo.CDFT(mol)
-    mf.mf_elec.xc = DFT_ELE_XC
+    mf.mf_elec.xc = DFT_E_XC
 
     energy = mf.kernel()
 
@@ -222,8 +222,8 @@ def qmCalc_cneo(qmatoms):
 def qmCalc_dft(qmatoms):
     mol = gto.M(atom=qmatoms, unit="ANG", basis=QM_E_BASIS, charge=QM_CHARGE)
     mf = dft.RKS(mol)
-    mf.xc = DFT_ELE_XC
-    if DFT_DF_FIT == True:
+    mf.xc = DFT_E_XC
+    if DFT_DF == True:
         mf = mf.density_fit(auxbasis=QM_E_BASIS_AUX)
 
     energy = mf.kernel()
@@ -252,11 +252,11 @@ def qmmmCalc_cneo(qmatoms, mmcoords, mmcharges, mmradii, qmnucindex):
     # energy
     # print("mol_neo quantum_nuc", mol_neo.quantum_nuc)
     # print(qmatoms)
-    if DFT_DF_FIT == True:
+    if DFT_DF == True:
         mf = neo.CDFT(mol_neo, df_ee=True, auxbasis_e=QM_E_BASIS_AUX)
     else:
         mf = neo.CDFT(mol_neo)
-    mf.mf_elec.xc = DFT_ELE_XC
+    mf.mf_elec.xc = DFT_E_XC
     energy = mf.kernel()
     te = time.time()
     print(f"time for energy = {te - t0} seconds")
@@ -282,9 +282,9 @@ def qmmmCalc_dft(qmatoms, mmcoords, mmcharges, mmradii):
 
     mol = gto.M(atom=qmatoms, unit="ANG", basis=QM_E_BASIS, charge=QM_CHARGE)
     mf_dft = dft.RKS(mol)
-    mf_dft.xc = DFT_ELE_XC
+    mf_dft.xc = DFT_E_XC
 
-    if DFT_DF_FIT == True:
+    if DFT_DF == True:
         mf_dft = mf_dft.density_fit(auxbasis=QM_E_BASIS_AUX)
     mf = itrf.mm_charge(mf_dft, mmcoords, mmcharges, mmradii)
 
@@ -312,7 +312,7 @@ def qmmmCalc_mulliken(qmatoms, mmcoords, mmcharges, mmradii):
 
     mol = gto.M(atom=qmatoms, unit="ANG", basis=QM_E_BASIS, charge=QM_CHARGE)
     mf_dft = dft.RKS(mol)
-    mf_dft.xc = DFT_ELE_XC
+    mf_dft.xc = DFT_E_XC
     mf = itrf.mm_charge(mf_dft, mmcoords, mmcharges, mmradii)
 
     mf.kernel()
@@ -435,7 +435,7 @@ def link_coord_corr(
             link_coord = scale * mm_host_coord + (1 - scale) * qm_host_coord
         link_coord = list(link_coord)
         qmkinds_link.append("H  ")
-        # We'd better enable user defined link atom kind later
+        # We should enable user defined link atom kind later
         qmcoords_link.append(link_coord)
         if printflag == True:
             print(
@@ -555,7 +555,18 @@ def neighborlist_gen(hostcoord, coords, index, bondthreshold=1.7, mode="radius")
     return neighbor_index
 
 
-def link_charge_corr(mmcharges, mmindex, links, qm_charge, system_charge, printflag):
+def link_charge_corr(
+    mmcharges,
+    mmindex,
+    links,
+    qm_charge,
+    system_charge,
+    printflag,
+    charge_corr_mode='global',
+    mmcoords=[],
+    mmkinds=[],
+    mmneighbor_thrsh=1.7,
+):
 
     mmcharges_redist = copy.deepcopy(mmcharges)
 
@@ -571,41 +582,85 @@ def link_charge_corr(mmcharges, mmindex, links, qm_charge, system_charge, printf
             for i in range(len(links))
         ]
 
-    charge_total_qm_classical = system_charge - sum(mmcharges)
-    # total_qm_classical_charge + total_mm_classical_charge = system_charge (interger)
-    charge_total_mm_host = sum(mmhostcharges)
-    # mm hosts classical charges are also spread out to the rest of mm atoms
-    charge_zeroed_out = charge_total_mm_host + charge_total_qm_classical
-    #
-    charge_corr_total = charge_zeroed_out - qm_charge
+    if charge_corr_mode.lower()[0:3] == 'glo':
+        charge_total_qm_classical = system_charge - sum(mmcharges)
+        # total_qm_classical_charge + total_mm_classical_charge = system_charge (interger)
+        charge_total_mm_host = sum(mmhostcharges)
+        # mm hosts classical charges are also spread out to the rest of mm atoms
+        charge_zeroed_out = charge_total_mm_host + charge_total_qm_classical
+        # residue charge to be spread out over the rest of mm atoms
+        charge_corr_total = charge_zeroed_out - qm_charge
 
-    if (len(mmcharges) - len(mmhostcharges)) < 1:
-        raise RuntimeError("there is no mm host to spread the charge correction")
-    chargecorr = charge_corr_total / (len(mmcharges) - len(mmhostcharges))
+        if (len(mmcharges) - len(mmhostcharges)) < 1:
+            raise RuntimeError("there is no mm atoms left to spread the charge correction")
+        chargecorr = charge_corr_total / (len(mmcharges) - len(mmhostcharges))
 
-    for i in range(len(mmcharges_redist)):
-        charge = mmcharges_redist[i]
-        # if LINK_PRINT_CHARGE_CORR == True:
-        #     print("mmcharge in-group index", i, "charge of mmhost", charge)
-        if i in mmhostindex_group:
+        for i in range(len(mmcharges_redist)):
+            charge = mmcharges_redist[i]
             # if LINK_PRINT_CHARGE_CORR == True:
-            #     print("mmhost in-group index", i, "charge of mmhost", charge)
-            mmcharges_redist[i] = 0.000
-        else:
-            mmcharges_redist[i] += chargecorr
+            #     print("mmcharge in-group index", i, "charge of mmhost", charge)
+            if i in mmhostindex_group:
+                # if LINK_PRINT_CHARGE_CORR == True:
+                #     print("mmhost in-group index", i, "charge of mmhost", charge)
+                mmcharges_redist[i] = 0.000
+            else:
+                mmcharges_redist[i] += chargecorr
 
-    if LINK_PRINT_CHARGE_CORR == True:
-        print(f"total qm classical charge: {charge_total_qm_classical:10.4f}")
-        print(f"+ total mm host charge {charge_total_mm_host:10.4f}")
-        print(f"= total zeroed-out classical charge {charge_zeroed_out:10.4f}")
-        print(f"- (qm charge : {qm_charge}) = total charge to spread over the remaining mm atoms {charge_corr_total:10.4f}")
-        print("remaining mm atom number", (len(mmcharges) - len(mmhostcharges)))
-        print(f"each remaining mm atom adds {chargecorr:10.4f}")
-        [
+        if printflag == True:
+            print(f"total qm classical charge: {charge_total_qm_classical:10.4f}")
+            print(f"+ total mm host charge {charge_total_mm_host:10.4f}")
+            print(f"= total zeroed-out classical charge {charge_zeroed_out:10.4f}")
             print(
-                f"global index {mmindex[i]:3d}, in-group index {mmindex.index(mmindex[i]):3d}, original charge {mmcharges[i]:10.4f}, correted charge {mmcharges_redist[i]:10.4f}"
+                f"- (qm charge : {qm_charge}) = total charge to spread over the remaining mm atoms {charge_corr_total:10.4f}"
             )
-            for i in range(len(mmcharges))
-        ]
+            print("remaining mm atom number", (len(mmcharges) - len(mmhostcharges)))
+            print(f"each remaining mm atom adds {chargecorr:10.4f}")
+
+    elif charge_corr_mode.lower()[0:3] == 'loc':
+        print("mmhost charges will be distributed to its neighbors")
+        if len(mmcoords) != len(mmcharges):
+            raise Exception("mmcoords length does not match mmcharges, did you forget to input or input the wrong mmcoords for mmhost local charge distribution?")
+        if len(mmkinds) != len(mmcharges):
+            raise Exception("mmkinds length does not match mmcharges, did you forget to input or input the wrong mmkinds?")
+        for link in links:
+            mmhost_groupindex = mmindex.index(link[1])
+            mmhost_coord = mmcoords[mmhost_groupindex]
+            hostcharge = mmcharges_redist[mmhost_groupindex]
+            if abs(hostcharge) > 0.2:
+                warnings.warn("mmhost charge is higher than 0.2, is the link's choice appropriate?")
+            mmcharges_redist[mmhost_groupindex] = 0
+            mmneighbor_index = []
+            mmneighbor_dists = []
+            mmneighbor_kinds = []
+            for i in range(len(mmcoords)):
+                dist = numpy.linalg.norm(numpy.array(mmcoords[i]) - numpy.array(mmhost_coord))
+                if dist < mmneighbor_thrsh and dist > 0.1:
+                    mmneighbor_index.append(mmindex[i])
+                    mmneighbor_dists.append(dist)
+                    mmneighbor_kinds.append(mmkinds[i])
+            mmneighbor_charges=[]
+            mmneighbor_charges0=[]
+            mmneighbor_num=len(mmneighbor_index)
+            for i in mmneighbor_index:
+                j = mmindex.index(i)
+                mmcharges_redist[j] += hostcharge/mmneighbor_num
+                mmneighbor_charges.append(mmcharges_redist[j])
+                mmneighbor_charges0.append(mmcharges[j])
+            if printflag == True:
+                print(f"{link=}")
+                print(f"{mmhost_coord=}")
+                print(f"mmhost is a {mmkinds[mmhost_groupindex]} containing {mmcharges[mmhost_groupindex]}, current charge {mmcharges_redist[mmhost_groupindex]}")
+                print(f'{mmneighbor_index=}')
+                print(f'{mmneighbor_dists=}')
+                print(f'{mmneighbor_kinds=}')
+                print(f'{mmneighbor_charges=}')
+                print(f'{mmneighbor_charges0=}')
+    else:
+        if charge_corr_mode.lower()[0:3] != 'del':
+            warnings.warn("charge correction method cannot be parsed, delete all mmhost charges")
+        for i in mmhostindex_group:
+            mmcharges_redist[i] = 0
+        [print(f"{mmcharges[i]=}") for i in mmhostindex_group]
+        [print(f"{mmcharges_redist[i]=}") for i in mmhostindex_group]
 
     return mmcharges_redist

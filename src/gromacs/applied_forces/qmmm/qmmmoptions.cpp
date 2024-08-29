@@ -599,10 +599,15 @@ void QMMMOptions::modifyQMMMTopology(gmx_mtop_t* mtop)
     if (std::abs(topInfo.totalClassicalChargeOfQMAtoms - qmC) > 1E-5)
     {
         msg = formatString(
-                "Total charge of your QMMM system differs from classical system! "
+                "Total charge of your QM system (%.5lf) differs "
+                "from classical system (%.5lf)! "
                 "Consider manually spreading %.5lf charge over MM atoms nearby to the QM "
-                "region\n",
-                topInfo.totalClassicalChargeOfQMAtoms - qmC);
+                "region. PySCF does not use 'qmmm-pyscf-qmcharge' in GROMACS, QM charge is"
+                "set by QM_CHARGE global variable in the PySCF driver. If the settings"
+                "are correct in PySCF driver then you can safely ignore this warning.\n"
+                ,qmC
+                ,topInfo.totalClassicalChargeOfQMAtoms
+                ,topInfo.totalClassicalChargeOfQMAtoms - qmC);
         appendWarning(msg);
     }
 
