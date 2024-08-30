@@ -10,27 +10,28 @@ from pyscf.qmmm.mm_mole import create_mm_mol
 import dftbplus
 
 # DEBUG = True
-SYSTEM_CHARGE = 0
+SYSTEM_CHARGE = -1
 QM_CHARGE = -1
 QM_MULT = 1
-QM_NUC_BASIS = "pb4d"
-QM_E_BASIS = "aug-cc-pvdz"
-QM_E_BASIS_AUX = "aug-cc-pvdz-ri"
-QM_METHOD = "cneo" # select from {'cneo', 'dft'}
-DFT_DF = True
-DFT_E_XC = "B3LYP"
+QM_NUC_BASIS = 'pb4d'
+QM_NUC_SELECT = 'custom' # select from {'all', 'custom'}
+QM_NUC_INDEX = [10, 15, 18]
+QM_E_BASIS = '631g'
+QM_E_BASIS_AUX = 'aug-cc-pvdz-ri'
+QM_METHOD = 'cneo' # select from {'cneo', 'dft'}
+DFT_DF = False
+DFT_E_XC = 'BLYP'
 LINK_MMHOST_NEIGHBOR_RANGE = 1.7
-MM_CHARGE_MODEL = "point" # select from {'point', 'gaussian'}
+MM_CHARGE_MODEL = 'point' # select from {'point', 'gaussian'}
 QMMM_CUT = 10 # Angstrom
 
-LINK_CHARGE_CORR_METHOD = "global" # select from {'global', 'local', 'delete'}
-LINK_COORD_CORR_METHOD = "scale" # select from {'scale', 'flat'}
+LINK_CHARGE_CORR_METHOD = 'global' # select from {'global', 'local', 'delete'}
+LINK_COORD_CORR_METHOD = 'scale' # select from {'scale', 'flat'}
 LINK_COORD_SCALE = 0.7246
 LINK_COORD_RFLAT = 1.1
 LINK_PRINT_COORD_CORR = False
 LINK_PRINT_FORCE_CORR = False
 LINK_PRINT_CHARGE_CORR = False
-LINK_PRINT_MMHOST_NEIGHBOR = False
 QMMM_PRINT = False
 QM_XYZ = False
 
@@ -69,39 +70,55 @@ def qmmmCalc(
         scale0=LINK_COORD_SCALE,
     )
     if gmxstep == 0 or gmxstep == -1:
-        prop_print_xzy('QM atoms', qmindex_link, qmkinds_link, qmcoords_link)
+        prop_print_xzy("QM atoms", qmindex_link, qmkinds_link, qmcoords_link)
     # Generate qmatoms list for pyscf input
     # make a list of H atoms in the qm atoms.
-    qmHindex = []
     qmatoms = []
-    qmnucindex = []
     qmlocalindex = 0
-    for kind, coord in zip(qmkinds_link, qmcoords_link):
+    if QM_METHOD == 'cneo':
+        print("CNEO method selected for QM calculation. ", end= '')
+        if QM_NUC_SELECT == 'custom':
+            print(f"User defined quantized nuclei list: {QM_NUC_INDEX}.")
+            qmnucindex = QM_NUC_INDEX
+        elif QM_NUC_SELECT == 'all':
+            print("all non-link atom hydrogen atoms will be quantized.")
+            qmnucindex = []
+
+    for index, kind, coord in zip(qmindex_link, qmkinds_link, qmcoords_link):
         qmatom = [kind] + coord
         qmatoms.append(qmatom)
-        if kind.strip().upper() == "H":
-            qmHindex.append(qmlocalindex)
-            if qmlocalindex in qmnucindex:
+        if kind.strip().upper() == 'H':
+            if QM_NUC_SELECT =='custom':
+                if qmlocalindex in qmnucindex:
+                    qmatoms[qmlocalindex][0] = 'H~'
+            if QM_NUC_SELECT == 'all' and str(index)[0] != 'L':
                 qmatoms[qmlocalindex][0] = 'H~'
+                qmnucindex.append(qmlocalindex)
         qmlocalindex = qmlocalindex + 1
     # Generate the list of quantum nuclei for CNEO or NEO calculation.
     # The last (# of links H atoms) are link atoms, therefore should be
     # removed from the list of quantum nuclei for CNEO calculation
-    # qmnucindex = qmHindex[: -len(links)]
-
 
     # Redistribute the classical QM and MM link host charges.
     # Default mode: spread the residue classical charge over the MM
     # atoms less MM link host atoms, i.e., QM atoms and MM link host
-    # atoms are "zeroed-out". This is the only mode currently implemented
+    # atoms are 'zeroed-out'. This is the only mode currently implemented
     mmcharges = link_charge_corr(
-        mmcharges, mmindex, links, QM_CHARGE, SYSTEM_CHARGE, LINK_PRINT_CHARGE_CORR
-    )
+            mmcharges=mmcharges,
+            mmindex=mmindex,
+            links=links,
+            qm_charge=QM_CHARGE,
+            system_charge=SYSTEM_CHARGE,
+            printflag=LINK_PRINT_CHARGE_CORR,
+            charge_corr_mode=LINK_CHARGE_CORR_METHOD,
+            mmcoords=mmcoords,
+            mmkinds=mmkinds,
+            mmneighbor_thrsh=LINK_MMHOST_NEIGHBOR_RANGE)
 
     mmindex_incut = numpy.array([], dtype=int)
     for qmcoord in qmcoords:
         cut_ind = numpy.flatnonzero(lib.norm(qmcoord - numpy.array(mmcoords), axis=1) <= QMMM_CUT)
-        # print(f"{cut_ind=}")
+        # print(f'{cut_ind=}')
         mmindex_incut = numpy.unique(numpy.concatenate((mmindex_incut, cut_ind)))
 
     mmkinds_incut = numpy.array(mmkinds)[mmindex_incut]
@@ -114,47 +131,46 @@ def qmmmCalc(
     mmradii = []
     for kind in mmkinds_incut:
         charge = elements.charge(kind)
-        if MM_CHARGE_MODEL.lower()[0:5] == "gauss":
+        if MM_CHARGE_MODEL.lower()[0:5] == 'gauss':
             mmradii.append(radii.COVALENT[charge] * nist.BOHR)
-        if MM_CHARGE_MODEL.lower() == "point":
+        if MM_CHARGE_MODEL.lower() == 'point':
             mmradii.append(1e-8 * nist.BOHR)
 
-    if QMMM_PRINT == True:
-        print("qm region H index:", qmHindex)
-        print("qm nuc index:", qmnucindex)
+    if QMMM_PRINT :
+        print("qm nuc index:", QM_NUC_INDEX)
         print("mmcharges\n", mmcharges)
         print("mmcoords\n", mmcoords)
         print("qmatomds\n", qmatoms)
         print(f"method we used in this calc is {QM_METHOD}")
         print(mmradii)
 
-    if QM_XYZ == True:
+    if QM_XYZ :
             with open('qm.xyz', 'w') as f:
-                f.write(str(len(qmatoms))+f'\n QM xyz at step {gmxstep}\n')
+                f.write(str(len(qmatoms))+f"\n QM xyz at step {gmxstep}\n")
                 for i in range(len(qmatoms)):
-                    f.write(f'{qmatoms[i][0]} {qmatoms[i][1]} {qmatoms[i][2]} {qmatoms[i][3]}\n')
+                    f.write(f"{qmatoms[i][0]} {qmatoms[i][1]} {qmatoms[i][2]} {qmatoms[i][3]}\n")
 
-    if QM_METHOD.upper() == "CNEO":
+    if QM_METHOD.upper() == 'CNEO':
         [energy, qmforces, mmforces_incut] = qmmmCalc_cneo(
-            qmatoms, mmcoords_incut, mmcharges_incut, mmradii, qmnucindex
+            qmatoms, mmcoords_incut, mmcharges_incut, mmradii, qmnucindex=qmnucindex
         )
-    elif QM_METHOD.upper() == "DFT":
+    elif QM_METHOD.upper() == 'DFT':
         [energy, qmforces, mmforces_incut] = qmmmCalc_dft(
             qmatoms, mmcoords_incut, mmcharges_incut, mmradii
         )
-    elif QM_METHOD.upper() == "MULLIKEN":
+    elif QM_METHOD.upper() == 'MULLIKEN':
         [energy, qmforces, mmforces_incut] = qmmmCalc_mulliken(
             qmatoms, mmcoords_incut, mmcharges_incut, mmradii
         )
 
-    elif QM_METHOD.upper() == "DFTB":
-        if os.path.isfile("qm.xyz"):
+    elif QM_METHOD.upper() == 'DFTB':
+        if os.path.isfile('qm.xyz'):
             pass
         else:
             with open('qm.xyz', 'w') as f:
-                f.write(str(len(qmatoms))+'\nfake QM xyz\n')
+                f.write(str(len(qmatoms))+"\nfake QM xyz\n")
                 for i in range(len(qmatoms)):
-                    f.write(f'{qmatoms[i][0]} {0.0} {0.0} {0.0}\n')
+                    f.write(f"{qmatoms[i][0]} {0.0} {0.0} {0.0}\n")
         [energy, qmforces, mmforces_incut] = qmmmCalc_dftb(
             qmcoords_link, mmcoords_incut, mmcharges_incut)
 
@@ -180,16 +196,37 @@ def qmmmCalc(
     return energy, qmforces_link, mmforces_link
 
 
-def qmCalc(qmbasis, qmmult, qmcharge, qmkinds, qmcoords):
+def qmCalc(gmxstep, qmbasis, qmmult, qmcharge, qmkinds, qmcoords):
 
     t0 = time.time()
     qmatoms = []
+    if QM_METHOD == 'cneo':
+        print("CNEO method selected for QM calculation. ", end= '')
+        if QM_NUC_SELECT == 'custom':
+            print(f"User defined quantized nuclei list: {QM_NUC_INDEX}.")
+            qmnucindex = QM_NUC_INDEX
+        elif QM_NUC_SELECT == 'all':
+            print("All hydrogen atoms will be quantized.")
+            qmnucindex = []
+
+    # The default option is quantizing all protons in CNEO.
+    # The user can customize quantized protons by modifying the list qmnucindex.
+    qmlocalindex = 0
     for kind, coord in zip(qmkinds, qmcoords):
         qmatom = [kind] + coord
         qmatoms.append(qmatom)
-    if QM_METHOD.upper() == "CNEO":
-        [energy, qmforces] = qmCalc_cneo(qmatoms)
-    elif QM_METHOD.upper() == "DFT":
+        if kind.strip().upper() == 'H':
+            if QM_NUC_SELECT =='custom':
+                if qmlocalindex in qmnucindex:
+                    qmatoms[qmlocalindex][0] = 'H~'
+            if QM_NUC_SELECT == 'all':
+                qmatoms[qmlocalindex][0] = 'H~'
+                qmnucindex.append(qmlocalindex)
+        qmlocalindex = qmlocalindex + 1
+
+    if QM_METHOD.upper() == 'CNEO':
+        [energy, qmforces] = qmCalc_cneo(qmatoms, qmnucindex=qmnucindex)
+    elif QM_METHOD.upper() == 'DFT':
         [energy, qmforces] = qmCalc_dft(qmatoms)
 
     print(f"time for this step = {time.time() - t0} seconds")
@@ -197,15 +234,16 @@ def qmCalc(qmbasis, qmmult, qmcharge, qmkinds, qmcoords):
     return energy, qmforces
 
 
-def qmCalc_cneo(qmatoms):
+def qmCalc_cneo(qmatoms, qmnucindex):
     mol = neo.M(
         atom=qmatoms,
         basis=QM_E_BASIS,
         nuc_basis=QM_NUC_BASIS,
-        quantum_nuc=["H"],
+        quantum_nuc=qmnucindex,
         charge=QM_CHARGE,
+        spin=QM_MULT-1
     )
-    if DFT_DF == True:
+    if DFT_DF :
         mf = neo.CDFT(mol, df_ee=True, auxbasis_e=QM_NUC_BASIS)
     else:
         mf = neo.CDFT(mol)
@@ -220,10 +258,14 @@ def qmCalc_cneo(qmatoms):
 
 
 def qmCalc_dft(qmatoms):
-    mol = gto.M(atom=qmatoms, unit="ANG", basis=QM_E_BASIS, charge=QM_CHARGE)
+    mol = gto.M(atom=qmatoms,
+                unit='ANG',
+                basis=QM_E_BASIS,
+                charge=QM_CHARGE,
+                spin=QM_MULT-1)
     mf = dft.RKS(mol)
     mf.xc = DFT_E_XC
-    if DFT_DF == True:
+    if DFT_DF :
         mf = mf.density_fit(auxbasis=QM_E_BASIS_AUX)
 
     energy = mf.kernel()
@@ -243,16 +285,17 @@ def qmmmCalc_cneo(qmatoms, mmcoords, mmcharges, mmradii, qmnucindex):
         atom=qmatoms,
         basis=QM_E_BASIS,
         nuc_basis=QM_NUC_BASIS,
-        # In this example, all H are quantized in CNEO, but
-        # can be customized by setting quantum_nuc to qmnucindex
-        quantum_nuc=['H'],
+        # If there is no crossing covalent bond and the user
+        # wishes to quantizd all H atoms, ['H'] can be used instead
+        quantum_nuc=qmnucindex,
         mm_mol=mmmol,
         charge=QM_CHARGE,
+        spin=QM_MULT-1
     )
     # energy
-    # print("mol_neo quantum_nuc", mol_neo.quantum_nuc)
+    print("mol_neo quantum_nuc", mol_neo.quantum_nuc)
     # print(qmatoms)
-    if DFT_DF == True:
+    if DFT_DF :
         mf = neo.CDFT(mol_neo, df_ee=True, auxbasis_e=QM_E_BASIS_AUX)
     else:
         mf = neo.CDFT(mol_neo)
@@ -280,11 +323,15 @@ def qmmmCalc_cneo(qmatoms, mmcoords, mmcharges, mmradii, qmnucindex):
 def qmmmCalc_dft(qmatoms, mmcoords, mmcharges, mmradii):
     t0 = time.time()
 
-    mol = gto.M(atom=qmatoms, unit="ANG", basis=QM_E_BASIS, charge=QM_CHARGE)
+    mol = gto.M(atom=qmatoms,
+                unit='ANG',
+                basis=QM_E_BASIS,
+                charge=QM_CHARGE,
+                spin=QM_MULT-1)
     mf_dft = dft.RKS(mol)
     mf_dft.xc = DFT_E_XC
 
-    if DFT_DF == True:
+    if DFT_DF :
         mf_dft = mf_dft.density_fit(auxbasis=QM_E_BASIS_AUX)
     mf = itrf.mm_charge(mf_dft, mmcoords, mmcharges, mmradii)
 
@@ -310,7 +357,7 @@ def qmmmCalc_dft(qmatoms, mmcoords, mmcharges, mmradii):
 def qmmmCalc_mulliken(qmatoms, mmcoords, mmcharges, mmradii):
     t0 = time.time()
 
-    mol = gto.M(atom=qmatoms, unit="ANG", basis=QM_E_BASIS, charge=QM_CHARGE)
+    mol = gto.M(atom=qmatoms, unit="ANG", basis=QM_E_BASIS, charge=QM_CHARGE, spin=QM_MULT-1)
     mf_dft = dft.RKS(mol)
     mf_dft.xc = DFT_E_XC
     mf = itrf.mm_charge(mf_dft, mmcoords, mmcharges, mmradii)
@@ -346,7 +393,7 @@ def qmmmCalc_dftb(qmcoords, mmcoords, mmcharges):
     r = numpy.linalg.norm(dr, axis=2)
     extpot = numpy.einsum('R,Rr->r', mmcharges, 1/r)
 
-    cdftb = dftbplus.DftbPlus(libpath='/home/zhang2539/dftbplus/lib64/libdftbplus.so',
+    cdftb = dftbplus.DftbPlus(libpath='path to /libdftbplus.so',
                             hsdpath='dftb_in.hsd',
                             logfile='dftb_log.log')
     cdftb.set_geometry(qmcoords, latvecs=None)
@@ -382,7 +429,7 @@ def link_coord_corr(
     mmkinds,
     mmcoords,
     printflag=False,
-    method="scale",
+    method='scale',
     rflat0=1.10,
     scale0=0.73,
 ):
@@ -391,7 +438,7 @@ def link_coord_corr(
     qmkinds_link = qmkinds[:]
     qmcoords_link = qmcoords[:]
     # Can warn user if the scale factor is out of the range 0~1
-    if printflag == True:
+    if printflag :
         print("qm global index", qmindex)
         # print("mm global index", mmindex)
         print(
@@ -409,13 +456,13 @@ def link_coord_corr(
     # implemented) for each link or using a flat r(QMhost_link)
     for i in range((len(links))):
         link_coord = [0.000, 0.000, 0.000]
-        qmindex_link.append("L" + str(i))
+        qmindex_link.append('L' + str(i))
         qm_group_index = qmindex.index(links[i][0])
         mm_group_index = mmindex.index(links[i][1])
         qm_host_coord = numpy.array(qmcoords[qm_group_index])
         mm_host_coord = numpy.array(mmcoords[mm_group_index])
-        if method.lower() == "scale":
-            # In the "scale" method, link atom is placed along the QMhost-MMhost
+        if method.lower() == 'scale':
+            # In the 'scale' method, link atom is placed along the QMhost-MMhost
             # bond, and its distance to QMhost is scale0*r_mm_qm
             # We can enable user defined (scaling factor) later, but
             # this feature is secondary compared to user-defined link atom kind
@@ -423,8 +470,8 @@ def link_coord_corr(
             link_scale.append(scale0)
             r_mm_qm = mm_host_coord - qm_host_coord
             d_mm_qm = numpy.linalg.norm(r_mm_qm)
-        if method.lower() == "flat":
-            # In the "flat" method, link atom is placed along the QMhost-MMhost
+        if method.lower() == 'flat':
+            # In the 'flat' method, link atom is placed along the QMhost-MMhost
             # bond, and its distance to QMhost is set to be
             # a constant, for all links
             scale = 0
@@ -434,17 +481,17 @@ def link_coord_corr(
             link_scale.append(scale)
             link_coord = scale * mm_host_coord + (1 - scale) * qm_host_coord
         link_coord = list(link_coord)
-        qmkinds_link.append("H  ")
+        qmkinds_link.append('H  ')
         # We should enable user defined link atom kind later
         qmcoords_link.append(link_coord)
-        if printflag == True:
+        if printflag :
             print(
                 i + 1,
                 "th link is between [QM host global index, MM host global index] =",
                 links[i],
             )
-            print("link" "s qm host in-group index", qmindex.index(links[i][0]))
-            print("link" "s mm host in-group index", mmindex.index(links[i][1]))
+            print("link's qm host in-group index", qmindex.index(links[i][0]))
+            print("link's mm host in-group index", mmindex.index(links[i][1]))
             print(
                 f"qm host atom is {qmkinds[qm_group_index]}, "
                 f"coordinate: {qm_host_coord}"
@@ -458,7 +505,7 @@ def link_coord_corr(
                 f"crossing bond length is {d_mm_qm} ang,\nand the scale factor for this link is {link_scale[i]}"
             )
 
-    if printflag == True:
+    if printflag :
         prop_print_xzy("qm coords original", qmindex, qmkinds, qmcoords)
         prop_print_xzy("qm coords modified", qmindex_link, qmkinds_link, qmcoords_link)
         # prop_print_xzy("mm coords", mmindex, mmkinds, mmcoords)
@@ -477,14 +524,14 @@ def link_force_corr(
     link_scale,
     printflag=False,
 ):
-    if printflag == True:
+    if printflag :
         prop_print_xzy("qm forces origin", qmindex, qmkinds, qmforces)
         # prop_print_xzy("mm forces origin", mmindex, mmkinds, mmforces)
 
     linkcount = 0
     for i in range((len(links))):
         linkcount = linkcount + 1
-        linkindex = "L" + str(i)
+        linkindex = 'L' + str(i)
 
         qm_group_index = qmindex.index(links[i][0])
         mm_group_index = mmindex.index(links[i][1])
@@ -498,7 +545,7 @@ def link_force_corr(
         mm_link_force_partition = link_force * link_scale[i]
         qmforces[qm_group_index] += qm_link_force_partition
         mmforces[mm_group_index] += mm_link_force_partition
-        if printflag == True:
+        if printflag :
             print(f"the force between the {i+1} th pair")
             print(
                 f"[QM host global index, MM host global index] = {links[i]} is\n{link_force}"
@@ -511,19 +558,19 @@ def link_force_corr(
             )
 
     for i in range((len(links))):
-        linkindex = "L" + str(i)
+        linkindex = 'L' + str(i)
         link_group_index = qmindex.index(linkindex)
         qmindex.remove(linkindex)
         qmforces = numpy.delete(qmforces, link_group_index, 0)
 
-    if printflag == True:
+    if printflag :
         prop_print_xzy("qm forces corrected", qmindex, qmkinds, qmforces)
         # prop_print_xzy("mm forces corrected", mmindex, mmkinds, mmforces)
 
     return qmindex, qmforces, mmforces
 
 
-def neighborlist_gen(hostcoord, coords, index, bondthreshold=1.7, mode="radius"):
+def neighborlist_gen(hostcoord, coords, index, bondthreshold=1.7, mode='radius'):
 
     neighbor_index = []
 
@@ -531,14 +578,14 @@ def neighborlist_gen(hostcoord, coords, index, bondthreshold=1.7, mode="radius")
         raise Exception("neighbor coords and index do not match")
     if len(coords) == 0:
         raise Exception("there is no neighbor to search for host coordinate")
-    if mode.lower()[0:3] == "rad":
+    if mode.lower()[0:3] == 'rad':
         for coord in coords:
             dist = numpy.linalg.norm(numpy.array(coord) - numpy.array(hostcoord))
             if dist < bondthreshold and dist > 0.1:
                 index[coords.index(coord)]
                 neighbor_index.append(index[coords.index(coord)])
 
-    if mode.lower()[0:4] == "near":
+    if mode.lower()[0:4] == 'near':
         nearest_index = index[0]
         nearest_coord = coord[nearest_index]
         nearest_dist = numpy.linalg.norm(
@@ -549,7 +596,6 @@ def neighborlist_gen(hostcoord, coords, index, bondthreshold=1.7, mode="radius")
             if dist < nearest_dist and dist > 0.1:
                 nearest_index = index[i]
                 nearest_coord = coords[i]
-                dist0 = dist
         neighbor_index = nearest_index
 
     return neighbor_index
@@ -574,7 +620,7 @@ def link_charge_corr(
     mmhostindex_group = [mmindex.index(i) for i in mmhostindex_global]
     mmhostcharges = [mmcharges[i] for i in mmhostindex_group]
 
-    if printflag == True:
+    if printflag :
         [
             print(
                 f"mmhost global index {mmhostindex_global[i]}, in-group index {mmhostindex_group[i]}, and the mmhost charge {mmhostcharges[i]}"
@@ -596,12 +642,7 @@ def link_charge_corr(
         chargecorr = charge_corr_total / (len(mmcharges) - len(mmhostcharges))
 
         for i in range(len(mmcharges_redist)):
-            charge = mmcharges_redist[i]
-            # if LINK_PRINT_CHARGE_CORR == True:
-            #     print("mmcharge in-group index", i, "charge of mmhost", charge)
             if i in mmhostindex_group:
-                # if LINK_PRINT_CHARGE_CORR == True:
-                #     print("mmhost in-group index", i, "charge of mmhost", charge)
                 mmcharges_redist[i] = 0.000
             else:
                 mmcharges_redist[i] += chargecorr
@@ -659,7 +700,7 @@ def link_charge_corr(
         if charge_corr_mode.lower()[0:3] != 'del':
             warnings.warn("charge correction method cannot be parsed, delete all mmhost charges.")
         else:
-            print('mmhost charges will be deleted.')
+            print("mmhost charges will be deleted.")
         for i in mmhostindex_group:
             mmcharges_redist[i] = 0
         [print(f"{mmcharges[i]=}") for i in mmhostindex_group]
