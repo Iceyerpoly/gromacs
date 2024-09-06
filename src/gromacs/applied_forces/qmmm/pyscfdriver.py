@@ -13,19 +13,19 @@ import dftbplus
 SYSTEM_CHARGE = 0
 QM_CHARGE = -1
 QM_MULT = 1
+QM_METHOD = 'cneo' # select from {'cneo', 'dft'}
+QM_E_BASIS = 'aug-cc-pvdz'
+DFT_E_XC = 'B3LYP'
 QM_NUC_BASIS = 'pb4d'
 QM_NUC_SELECT = 'all' # select from {'all', 'custom'}
 QM_NUC_INDEX = []
-QM_E_BASIS = 'aug-cc-pvdz'
-QM_E_BASIS_AUX = 'aug-cc-pvdz-ri'
-QM_METHOD = 'cneo' # select from {'cneo', 'dft'}
 DFT_DF = True
-DFT_E_XC = 'B3LYP'
-LINK_MMHOST_NEIGHBOR_RANGE = 1.7
+QM_E_BASIS_AUX = 'aug-cc-pvdz-ri'
 MM_CHARGE_MODEL = 'point' # select from {'point', 'gaussian'}
 QMMM_CUT = 10 # Angstrom
 
 LINK_CHARGE_CORR_METHOD = 'global' # select from {'global', 'local', 'delete'}
+LINK_MMHOST_NEIGHBOR_RANGE = 1.7
 LINK_COORD_CORR_METHOD = 'scale' # select from {'scale', 'flat'}
 LINK_COORD_SCALE = 0.7246
 LINK_COORD_RFLAT = 1.1
