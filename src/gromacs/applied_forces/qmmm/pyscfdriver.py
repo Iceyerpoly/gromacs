@@ -10,17 +10,17 @@ from pyscf.qmmm.mm_mole import create_mm_mol
 import dftbplus
 
 # DEBUG = True
-SYSTEM_CHARGE = -1
+SYSTEM_CHARGE = 0
 QM_CHARGE = -1
 QM_MULT = 1
 QM_NUC_BASIS = 'pb4d'
-QM_NUC_SELECT = 'custom' # select from {'all', 'custom'}
-QM_NUC_INDEX = [10, 15, 18]
-QM_E_BASIS = '631g'
+QM_NUC_SELECT = 'all' # select from {'all', 'custom'}
+QM_NUC_INDEX = []
+QM_E_BASIS = 'aug-cc-pvdz'
 QM_E_BASIS_AUX = 'aug-cc-pvdz-ri'
 QM_METHOD = 'cneo' # select from {'cneo', 'dft'}
-DFT_DF = False
-DFT_E_XC = 'BLYP'
+DFT_DF = True
+DFT_E_XC = 'B3LYP'
 LINK_MMHOST_NEIGHBOR_RANGE = 1.7
 MM_CHARGE_MODEL = 'point' # select from {'point', 'gaussian'}
 QMMM_CUT = 10 # Angstrom
@@ -52,7 +52,9 @@ def qmmmCalc(
 ):
     print(f"gmxstep is {gmxstep}")
     t0 = time.time()
-
+    qmindex_pyscf = [x for x in range(len(qmkinds))]
+    if gmxstep == 0 or gmxstep == -1:
+        prop_print_xzy("QM atoms", qmindex_pyscf, qmkinds, qmcoords)
     # Generate link atoms coordinates, and
     # extend kinds, coords, and index lists of qm atoms. Default mode:
 
@@ -69,8 +71,7 @@ def qmmmCalc(
         rflat0=LINK_COORD_RFLAT,
         scale0=LINK_COORD_SCALE,
     )
-    if gmxstep == 0 or gmxstep == -1:
-        prop_print_xzy("QM atoms", qmindex_link, qmkinds_link, qmcoords_link)
+
     # Generate qmatoms list for pyscf input
     # make a list of H atoms in the qm atoms.
     qmatoms = []
@@ -136,7 +137,7 @@ def qmmmCalc(
         if MM_CHARGE_MODEL.lower() == 'point':
             mmradii.append(1e-8 * nist.BOHR)
 
-    if QMMM_PRINT :
+    if QMMM_PRINT:
         print("qm nuc index:", QM_NUC_INDEX)
         print("mmcharges\n", mmcharges)
         print("mmcoords\n", mmcoords)
@@ -144,7 +145,7 @@ def qmmmCalc(
         print(f"method we used in this calc is {QM_METHOD}")
         print(mmradii)
 
-    if QM_XYZ :
+    if QM_XYZ:
             with open('qm.xyz', 'w') as f:
                 f.write(str(len(qmatoms))+f"\n QM xyz at step {gmxstep}\n")
                 for i in range(len(qmatoms)):
@@ -199,6 +200,11 @@ def qmmmCalc(
 def qmCalc(gmxstep, qmbasis, qmmult, qmcharge, qmkinds, qmcoords):
 
     t0 = time.time()
+    t0 = time.time()
+    qmindex_pyscf = [x for x in range(len(qmkinds))]
+    if gmxstep == 0 or gmxstep == -1:
+        prop_print_xzy("QM atoms", qmindex_pyscf, qmkinds, qmcoords)
+
     qmatoms = []
     if QM_METHOD == 'cneo':
         print("CNEO method selected for QM calculation. ", end= '')
@@ -243,7 +249,7 @@ def qmCalc_cneo(qmatoms, qmnucindex):
         charge=QM_CHARGE,
         spin=QM_MULT-1
     )
-    if DFT_DF :
+    if DFT_DF:
         mf = neo.CDFT(mol, df_ee=True, auxbasis_e=QM_NUC_BASIS)
     else:
         mf = neo.CDFT(mol)
@@ -265,7 +271,7 @@ def qmCalc_dft(qmatoms):
                 spin=QM_MULT-1)
     mf = dft.RKS(mol)
     mf.xc = DFT_E_XC
-    if DFT_DF :
+    if DFT_DF:
         mf = mf.density_fit(auxbasis=QM_E_BASIS_AUX)
 
     energy = mf.kernel()
@@ -295,7 +301,7 @@ def qmmmCalc_cneo(qmatoms, mmcoords, mmcharges, mmradii, qmnucindex):
     # energy
     print("mol_neo quantum_nuc", mol_neo.quantum_nuc)
     # print(qmatoms)
-    if DFT_DF :
+    if DFT_DF:
         mf = neo.CDFT(mol_neo, df_ee=True, auxbasis_e=QM_E_BASIS_AUX)
     else:
         mf = neo.CDFT(mol_neo)
@@ -331,7 +337,7 @@ def qmmmCalc_dft(qmatoms, mmcoords, mmcharges, mmradii):
     mf_dft = dft.RKS(mol)
     mf_dft.xc = DFT_E_XC
 
-    if DFT_DF :
+    if DFT_DF:
         mf_dft = mf_dft.density_fit(auxbasis=QM_E_BASIS_AUX)
     mf = itrf.mm_charge(mf_dft, mmcoords, mmcharges, mmradii)
 
@@ -438,7 +444,7 @@ def link_coord_corr(
     qmkinds_link = qmkinds[:]
     qmcoords_link = qmcoords[:]
     # Can warn user if the scale factor is out of the range 0~1
-    if printflag :
+    if printflag:
         print("qm global index", qmindex)
         # print("mm global index", mmindex)
         print(
@@ -484,7 +490,7 @@ def link_coord_corr(
         qmkinds_link.append('H  ')
         # We should enable user defined link atom kind later
         qmcoords_link.append(link_coord)
-        if printflag :
+        if printflag:
             print(
                 i + 1,
                 "th link is between [QM host global index, MM host global index] =",
@@ -505,7 +511,7 @@ def link_coord_corr(
                 f"crossing bond length is {d_mm_qm} ang,\nand the scale factor for this link is {link_scale[i]}"
             )
 
-    if printflag :
+    if printflag:
         prop_print_xzy("qm coords original", qmindex, qmkinds, qmcoords)
         prop_print_xzy("qm coords modified", qmindex_link, qmkinds_link, qmcoords_link)
         # prop_print_xzy("mm coords", mmindex, mmkinds, mmcoords)
@@ -524,7 +530,7 @@ def link_force_corr(
     link_scale,
     printflag=False,
 ):
-    if printflag :
+    if printflag:
         prop_print_xzy("qm forces origin", qmindex, qmkinds, qmforces)
         # prop_print_xzy("mm forces origin", mmindex, mmkinds, mmforces)
 
@@ -545,7 +551,7 @@ def link_force_corr(
         mm_link_force_partition = link_force * link_scale[i]
         qmforces[qm_group_index] += qm_link_force_partition
         mmforces[mm_group_index] += mm_link_force_partition
-        if printflag :
+        if printflag:
             print(f"the force between the {i+1} th pair")
             print(
                 f"[QM host global index, MM host global index] = {links[i]} is\n{link_force}"
@@ -563,7 +569,7 @@ def link_force_corr(
         qmindex.remove(linkindex)
         qmforces = numpy.delete(qmforces, link_group_index, 0)
 
-    if printflag :
+    if printflag:
         prop_print_xzy("qm forces corrected", qmindex, qmkinds, qmforces)
         # prop_print_xzy("mm forces corrected", mmindex, mmkinds, mmforces)
 
@@ -620,7 +626,7 @@ def link_charge_corr(
     mmhostindex_group = [mmindex.index(i) for i in mmhostindex_global]
     mmhostcharges = [mmcharges[i] for i in mmhostindex_group]
 
-    if printflag :
+    if printflag:
         [
             print(
                 f"mmhost global index {mmhostindex_global[i]}, in-group index {mmhostindex_group[i]}, and the mmhost charge {mmhostcharges[i]}"
