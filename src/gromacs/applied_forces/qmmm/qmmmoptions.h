@@ -48,8 +48,6 @@
 
 #include "qmmmtypes.h"
 
-#define GMX_PYSCF 1
-
 struct gmx_mtop_t;
 class WarningHandler;
 

@@ -45,9 +45,12 @@
 #include "gromacs/utility/exceptions.h"
 
 #include "legacymodules.h"
+
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
+#define PY_ARRAY_UNIQUE_SYMBOL GROMACS_ARRAY_API
+#define NUMPY_IMPORT_ARRAY
 #include "numpy/arrayobject.h"
 
 int main(int argc, char* argv[])
@@ -69,20 +72,25 @@ int main(int argc, char* argv[])
         fprintf(stderr, "Importing NumpyArray.\n");
         if (PyErr_Occurred())
         {
+            PyErr_Print();
             fprintf(stderr, "Failed to import numpy Python module(s).\n");
+            PyMem_RawFree(program);
             exit(1);
         }
         assert(PyArray_API);
+
         gmx::CommandLineModuleManager manager("gmx", &context);
         registerTrajectoryAnalysisModules(&manager);
         registerLegacyModules(&manager);
         manager.addHelpTopic(gmx::createSelectionHelpTopic());
         int rc = manager.run(argc, argv);
         gmx::finalizeForCommandLine();
+
         PyErr_Print();
         fprintf(stderr, "Printed Python Errors, Finalizing Py Interpreter.\n");
         if (Py_FinalizeEx() < 0)
         {
+            PyMem_RawFree(program);
             exit(120);
         }
         PyMem_RawFree(program);

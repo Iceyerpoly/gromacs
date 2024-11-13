@@ -1,8 +1,11 @@
-import unittest
 import numpy
-
-# import pyscf
 import time, copy, os, warnings
+import psutil
+try:
+    import cupy as cp
+    HAVE_GPU = True
+except ImportError:
+    HAVE_GPU = False
 from pyscf import lib, gto, scf, grad, dft, neo, lo
 from pyscf.qmmm import itrf
 from pyscf.data import elements, radii, nist
@@ -36,6 +39,30 @@ QMMM_PRINT = False
 QM_XYZ = False
 
 
+def print_memory_usage(step, point):
+    # CPU memory
+    process = psutil.Process()
+    cpu_memory_mb = process.memory_info().rss / 1024 / 1024
+
+    memory_str = f"Step {step}, {point}:\n  CPU Memory: {cpu_memory_mb:.1f} MB"
+
+    # GPU memory if available
+    if HAVE_GPU:
+        try:
+            gpu_memory_mb = cp.get_default_memory_pool().used_bytes() / 1024 / 1024
+            gpu_cached_mb = cp.get_default_memory_pool().total_bytes() / 1024 / 1024
+            memory_str += f"\n  GPU Memory: {gpu_memory_mb:.1f} MB (Cached: {gpu_cached_mb:.1f} MB)"
+
+            # Print pinned memory if used
+            pinned_memory_mb = cp.get_default_pinned_memory_pool().used_bytes() / 1024 / 1024
+            if pinned_memory_mb > 0:
+                memory_str += f"\n  Pinned Memory: {pinned_memory_mb:.1f} MB"
+        except:
+            memory_str += "\n  GPU memory query failed"
+
+    print(memory_str)
+
+
 def qmmmCalc(
     gmxstep,
     qmbasis,
@@ -51,6 +78,7 @@ def qmmmCalc(
     links,
 ):
     print(f"gmxstep is {gmxstep}")
+    print_memory_usage(gmxstep, "start of qmmmCalc")
     t0 = time.time()
     qmindex_pyscf = [x for x in range(len(qmkinds))]
     if gmxstep == 0 or gmxstep == -1:
@@ -175,6 +203,7 @@ def qmmmCalc(
         [energy, qmforces, mmforces_incut] = qmmmCalc_dftb(
             qmcoords_link, mmcoords_incut, mmcharges_incut)
 
+
     mmforces = numpy.zeros((len(mmindex), 3))
     mmforces[mmindex_incut] = mmforces_incut
 
@@ -193,13 +222,13 @@ def qmmmCalc(
     )
 
     print(f"time for this step = {time.time() - t0} seconds")
+    print_memory_usage(gmxstep, "end of qmmmCalc")
 
     return energy, qmforces_link, mmforces_link
 
 
 def qmCalc(gmxstep, qmbasis, qmmult, qmcharge, qmkinds, qmcoords):
-
-    t0 = time.time()
+    print_memory_usage(gmxstep, "start of qmCalc")
     t0 = time.time()
     qmindex_pyscf = [x for x in range(len(qmkinds))]
     if gmxstep == 0 or gmxstep == -1:
@@ -236,6 +265,7 @@ def qmCalc(gmxstep, qmbasis, qmmult, qmcharge, qmkinds, qmcoords):
         [energy, qmforces] = qmCalc_dft(qmatoms)
 
     print(f"time for this step = {time.time() - t0} seconds")
+    print_memory_usage(gmxstep, "end of qmCalc")
 
     return energy, qmforces
 
@@ -412,9 +442,6 @@ def qmmmCalc_dftb(qmcoords, mmcoords, mmcharges):
     qmforces += -numpy.einsum('r,R,Rrx,Rr->rx', qmcharges, mmcharges, dr, r**-3)
     mmforces = -numpy.einsum('r,R,Rrx,Rr->Rx', qmcharges, mmcharges, dr, r**-3)
     return energy, qmforces, mmforces
-
-def printProp(prop):
-    print(prop)
 
 
 def prop_print_xzy(xyzpropname, index, kinds, xyzprops):
