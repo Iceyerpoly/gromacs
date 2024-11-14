@@ -116,6 +116,7 @@ def qmmmCalc(
     for index, kind, coord in zip(qmindex_link, qmkinds_link, qmcoords_link):
         qmatom = [kind] + coord
         qmatoms.append(qmatom)
+        qmnucindex = QM_NUC_INDEX
         if kind.strip().upper() == 'H':
             if QM_NUC_SELECT =='custom':
                 if qmlocalindex in qmnucindex:
