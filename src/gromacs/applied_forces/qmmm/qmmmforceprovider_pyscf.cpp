@@ -40,7 +40,6 @@
  * \ingroup module_applied_forces
  */
 
-#ifdef GMX_PYSCF
 #include "gmxpre.h"
 
 #include "gromacs/domdec/domdec_struct.h"
@@ -505,7 +504,7 @@ void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceP
                 * c_hartreeBohr2Md;
     }
 
-    // forceRecorder(fOutput, pyscfForce, fInput);
+    // frameRecorder(fInput);
 }
 
 
@@ -578,9 +577,7 @@ void QMMMForceProvider::initialInfoGenerator(const ForceProviderInput& fInput)
     return;
 }
 
-void QMMMForceProvider::frameRecorder(ForceProviderOutput*      fOutput,
-                                      std::vector<double>       pyscfForce,
-                                      const ForceProviderInput& fInput)
+void QMMMForceProvider::frameRecorder(const ForceProviderInput& fInput)
 {
 
     std::string       QMMM_record = "";
@@ -591,8 +588,8 @@ void QMMMForceProvider::frameRecorder(ForceProviderOutput*      fOutput,
     // recordFile << "number of atoms" << numAtoms << std::endl;
     // recordFile << "step number = " << "need to find..." << std::endl;
 
-    double Fx = 0.0, Fy = 0.0, Fz = 0.0;
-    double Ftotx = 0.0, Ftoty = 0.0, Ftotz = 0.0;
+    // double Fx = 0.0, Fy = 0.0, Fz = 0.0;
+    // double Ftotx = 0.0, Ftoty = 0.0, Ftotz = 0.0;
     double coordx = 0.0, coordy = 0.0, coordz = 0.0;
     double charge = 0.0;
     QMMM_record += formatString("step = ");
@@ -650,12 +647,12 @@ void QMMMForceProvider::frameRecorder(ForceProviderOutput*      fOutput,
                 "%4d  %2s MM  ",
                 mmAtoms_.localIndex()[i],
                 periodic_system[parameters_.atomNumbers_[mmAtoms_.globalIndex()[i]]].c_str());
-        Ftotx = fOutput->forceWithVirial_.force_[mmAtoms_.localIndex()[i]][XX] / c_hartreeBohr2Md;
-        Ftoty = fOutput->forceWithVirial_.force_[mmAtoms_.localIndex()[i]][YY] / c_hartreeBohr2Md;
-        Ftotz = fOutput->forceWithVirial_.force_[mmAtoms_.localIndex()[i]][ZZ] / c_hartreeBohr2Md;
-        Fx = static_cast<real>(pyscfForce[3 * mmAtoms_.globalIndex()[mmAtoms_.collectiveIndex()[i]]]);
-        Fy = static_cast<real>(pyscfForce[3 * mmAtoms_.globalIndex()[mmAtoms_.collectiveIndex()[i]] + 1]);
-        Fz = static_cast<real>(pyscfForce[3 * mmAtoms_.globalIndex()[mmAtoms_.collectiveIndex()[i]] + 2]);
+        // Ftotx = fOutput->forceWithVirial_.force_[mmAtoms_.localIndex()[i]][XX] / c_hartreeBohr2Md;
+        // Ftoty = fOutput->forceWithVirial_.force_[mmAtoms_.localIndex()[i]][YY] / c_hartreeBohr2Md;
+        // Ftotz = fOutput->forceWithVirial_.force_[mmAtoms_.localIndex()[i]][ZZ] / c_hartreeBohr2Md;
+        // Fx = static_cast<real>(pyscfForce[3 * mmAtoms_.globalIndex()[mmAtoms_.collectiveIndex()[i]]]);
+        // Fy = static_cast<real>(pyscfForce[3 * mmAtoms_.globalIndex()[mmAtoms_.collectiveIndex()[i]] + 1]);
+        // Fz = static_cast<real>(pyscfForce[3 * mmAtoms_.globalIndex()[mmAtoms_.collectiveIndex()[i]] + 2]);
 
         // Fx = Fx/c_bohr2ANG;
         // Fy = Fy/c_bohr2ANG;
@@ -685,4 +682,3 @@ void QMMMForceProvider::frameRecorder(ForceProviderOutput*      fOutput,
 
 
 } // namespace gmx
-#endif

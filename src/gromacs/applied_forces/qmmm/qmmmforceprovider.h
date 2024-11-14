@@ -42,7 +42,7 @@
 #ifndef GMX_APPLIED_FORCES_QMMMFORCEPROVIDER_H
 #define GMX_APPLIED_FORCES_QMMMFORCEPROVIDER_H
 
-#ifdef GMX_PYSCF
+#if GMX_PYSCF
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
@@ -106,13 +106,11 @@ private:
      */
     void initCP2KForceEnvironment(const t_commrec& cr);
 
-#ifdef GMX_PYSCF
+#if GMX_PYSCF
     /*
      *this recorder should be put after force is calculated
      */
-    void frameRecorder(ForceProviderOutput*      fOutput,
-                       std::vector<double>       pyscfForce,
-                       const ForceProviderInput& fInput);
+    void frameRecorder(const ForceProviderInput& fInput);
     /*
      * this recorder generates charge, elemental kind, and indeces for
      * pyscfdriverii, before the first step begins
@@ -132,7 +130,7 @@ private:
     //! Flag wether initCP2KForceEnvironment() has been called already
     bool isCp2kLibraryInitialized_ = false;
 
-#ifdef GMX_PYSCF
+#if GMX_PYSCF
     //! PySCF MD engine module
     PyObject* pModule_ = nullptr;
 #endif

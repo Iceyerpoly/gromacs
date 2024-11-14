@@ -309,7 +309,11 @@ void QMMMOptions::processTprFilename(const MdRunInputFilename& tprFilename)
 
     parameters_.qmFileNameBase_ =
             stripExtension(std::filesystem::path(tprFilename.mdRunFilename_).filename())
+#if GMX_PYSCF
                     .append("_pyscf")
+#else
+                    .append("_cp2k")
+#endif
                     .u8string();
 }
 
@@ -536,7 +540,11 @@ void QMMMOptions::modifyQMMMTopology(gmx_mtop_t* mtop)
     real qmC = static_cast<real>(parameters_.qmCharge_);
 
     // Print message to the log about performed modifications
+#if GMX_PYSCF
     std::string msg = "\nQMMM Interface with pyscf is active, topology was modified!\n";
+#else
+    std::string msg = "\nQMMM Interface with CP2K is active, topology was modified!\n";
+#endif
 
     msg += formatString(
             "Number of QM atoms: %d\nNumber of MM atoms: %d\n", topInfo.numQMAtoms, topInfo.numMMAtoms);
@@ -586,8 +594,9 @@ void QMMMOptions::modifyQMMMTopology(gmx_mtop_t* mtop)
     if (topInfo.numLinkBonds > 0)
     {
         msg += formatString("QM-MM broken bonds found: %d\n", topInfo.numLinkBonds);
-        for (int i = 0; i < parameters_.link_.size(); i ++){
-            msg += formatString("%dth broken bond is between index %ld (QM) and %ld (MM)\n", i+1, parameters_.link_[i].qm, parameters_.link_[i].mm);
+        for (size_t i = 0; i < parameters_.link_.size(); ++i){
+            msg += formatString("%zuth broken bond is between index %ld (QM) and %ld (MM)\n",
+                                i+1, parameters_.link_[i].qm, parameters_.link_[i].mm);
         }
     }
 
