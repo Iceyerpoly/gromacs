@@ -164,7 +164,7 @@ private:
     const std::string c_qmChargeTag_            = "qmcharge";
     const std::string c_qmMultTag_              = "qmmultiplicity";
     const std::string c_qmMethodTag_            = "qmmethod";
-    const std::string c_qmUserInputFileNameTag_ = "qmfilenames";
+    const std::string c_qmUserInputFileNameTag_ = "drivername";
     //! \}
 
     /*! \brief This tags for parameters which will be generated during grompp

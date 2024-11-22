@@ -113,7 +113,7 @@ private:
     void frameRecorder(const ForceProviderInput& fInput);
     /*
      * this recorder generates charge, elemental kind, and indeces for
-     * pyscfdriverii, before the first step begins
+     * pyscfdriver, before the first step begins
      */
     void initialInfoGenerator(const ForceProviderInput& fInput);
 #endif

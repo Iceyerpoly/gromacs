@@ -175,7 +175,8 @@ void QMMMOptions::buildMdpOutput(KeyValueTreeObjectBuilder* builder) const
 
         // QM input filename, default empty (will be deduced from *.tpr name during mdrun)
         addQMMMMdpOutputValueComment(
-                builder, "; Names of CP2K files during simulation", c_qmUserInputFileNameTag_);
+                // builder, "; Names of CP2K files during simulation", c_qmUserInputFileNameTag_);
+                builder, "; Names of PySCF files during simulation", c_qmUserInputFileNameTag_);
         addQMMMMdpOutputValue(builder, parameters_.qmFileNameBase_, c_qmUserInputFileNameTag_);
     }
 }

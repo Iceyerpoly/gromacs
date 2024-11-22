@@ -116,13 +116,19 @@ void QMMMForceProvider::appendLog(const std::string& msg)
     GMX_LOG(logger_.info).asParagraph().appendText(msg);
 }
 
-void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceProviderOutput* fOutput)
+void QMMMForceProvider::QMMMForceProvider(const ForceProviderInput& fInput, ForceProviderOutput* fOutput)
 {
+    // Set pyscf driver name
+    const std::string pyscfDriverName = parameters_.qmFileNameBase_;
+    PythonObjectManager pyDriverName(PyUnicode_FromString(pyscfDriverName.c_str()));
+    fprintf(stderr, "PySCF drivername is %s\n", pyscfDriverName.c_str());
+    //  to enable pyscfdriver from any directory, need to add driverpath to parameters_,
+    //  and then add the path to sys.path with C/Python API
     // Load module if not already loaded
     if (!pModule_)
     {
         fprintf(stderr, "Importing pyscfdriver...\n");
-        pModule_ = PyImport_ImportModule("pyscfdriver");
+        pModule_ = PyImport_ImportModule(pyscfDriverName.c_str());
         if (!pModule_)
         {
             PyErr_Print();
