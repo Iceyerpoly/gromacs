@@ -128,6 +128,7 @@ struct QMMMParameters
      */
     std::string qmFileNameBase_ = "pyscfdriver";
     //! String containing whole CP2K input which can be stored inside *.tpr
+    std::string qmFilePath_ = "./";
     std::string qmInput_;
     //! String containing PDB file for CP2K input which can be stored inside *.tpr
     std::string qmPdb_;

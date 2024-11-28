@@ -143,6 +143,7 @@ void QMMMOptions::initMdpTransform(IKeyValueTreeTransformRules* rules)
     QMMMMdpTransformFromString<int>(rules, &fromStdString<int>, c_qmChargeTag_);
     QMMMMdpTransformFromString<int>(rules, &fromStdString<int>, c_qmMultTag_);
     QMMMMdpTransformFromString<std::string>(rules, stringIdentityTransform, c_qmUserInputFileNameTag_);
+    QMMMMdpTransformFromString<std::string>(rules, stringIdentityTransform, c_qmUserInputFilePathTag_);
 }
 
 void QMMMOptions::buildMdpOutput(KeyValueTreeObjectBuilder* builder) const
@@ -178,6 +179,10 @@ void QMMMOptions::buildMdpOutput(KeyValueTreeObjectBuilder* builder) const
                 // builder, "; Names of CP2K files during simulation", c_qmUserInputFileNameTag_);
                 builder, "; Names of PySCF files during simulation", c_qmUserInputFileNameTag_);
         addQMMMMdpOutputValue(builder, parameters_.qmFileNameBase_, c_qmUserInputFileNameTag_);
+        addQMMMMdpOutputValueComment(
+                // builder, "; Names of CP2K files during simulation", c_qmUserInputFileNameTag_);
+                builder, "; Path of PySCF files during simulation", c_qmUserInputFilePathTag_);
+        addQMMMMdpOutputValue(builder, parameters_.qmFilePath_, c_qmUserInputFilePathTag_);
     }
 }
 
@@ -191,6 +196,7 @@ void QMMMOptions::initMdpOptions(IOptionsContainerWithSections* options)
                               .enumValue(c_qmmmQMMethodNames)
                               .store(&parameters_.qmMethod_));
     section.addOption(StringOption(c_qmUserInputFileNameTag_.c_str()).store(&parameters_.qmFileNameBase_));
+    section.addOption(StringOption(c_qmUserInputFilePathTag_.c_str()).store(&parameters_.qmFilePath_));
     section.addOption(IntegerOption(c_qmChargeTag_.c_str()).store(&parameters_.qmCharge_));
     section.addOption(IntegerOption(c_qmMultTag_.c_str()).store(&parameters_.qmMultiplicity_));
 }

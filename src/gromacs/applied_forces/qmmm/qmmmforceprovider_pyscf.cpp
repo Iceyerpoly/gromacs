@@ -116,18 +116,54 @@ void QMMMForceProvider::appendLog(const std::string& msg)
     GMX_LOG(logger_.info).asParagraph().appendText(msg);
 }
 
-void QMMMForceProvider::QMMMForceProvider(const ForceProviderInput& fInput, ForceProviderOutput* fOutput)
+void QMMMForceProvider::calculateForces(const ForceProviderInput& fInput, ForceProviderOutput* fOutput)
 {
-    // Set pyscf driver name
+    // Set pyscf driver name and path
     const std::string pyscfDriverName = parameters_.qmFileNameBase_;
-    PythonObjectManager pyDriverName(PyUnicode_FromString(pyscfDriverName.c_str()));
+    const std::string pyscfDriverPath = parameters_.qmFilePath_;
     fprintf(stderr, "PySCF drivername is %s\n", pyscfDriverName.c_str());
+    fprintf(stderr, "PySCF driver path is %s\n", pyscfDriverPath.c_str());
     //  to enable pyscfdriver from any directory, need to add driverpath to parameters_,
     //  and then add the path to sys.path with C/Python API
     // Load module if not already loaded
     if (!pModule_)
     {
         fprintf(stderr, "Importing pyscfdriver...\n");
+
+        // Test if pyscfdriver exists
+        std::string pyscfDriverFullName = pyscfDriverPath + pyscfDriverName + ".py";
+        std::ifstream pyscfDriverFile(pyscfDriverFullName);
+        if (!pyscfDriverFile.good()) {
+            PyErr_Print();
+            fprintf(stderr, "PySCF driver file %s%s%s does not exist\n",
+            pyscfDriverPath.c_str(), pyscfDriverName.c_str(), ".py");
+            Py_Finalize();
+        }
+
+        // Import the `sys` module
+        PythonObjectManager sysModule(PyImport_ImportModule("sys"));
+        if (!sysModule.get()) {
+            PyErr_Print();
+            std::cerr << "Failed to import sys module." << std::endl;
+            Py_Finalize();
+        }
+
+        // Get the `sys.path` attribute
+        PythonObjectManager sysPath(PyObject_GetAttrString(sysModule.get(), "path"));
+        if (!sysPath.get() || !PyList_Check(sysPath.get())) {
+            PyErr_Print();
+            std::cerr << "Failed to get sys.path." << std::endl;
+            Py_Finalize();
+        }
+
+        // Add  pyscfDriverPath path to `sys.path`
+        PythonObjectManager pyscfPath(PyUnicode_FromString(pyscfDriverPath.c_str()));
+        if (PyList_Append(sysPath.get(), pyscfPath.get()) != 0) {
+            PyErr_Print();
+            std::cerr << "Failed to add DriverPath to SysPath for loading driver module." << std::endl;
+            Py_Finalize();
+        }
+
         pModule_ = PyImport_ImportModule(pyscfDriverName.c_str());
         if (!pModule_)
         {
