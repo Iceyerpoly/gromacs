@@ -281,7 +281,7 @@ def qmCalc_cneo(qmatoms, qmnucindex):
         spin=QM_MULT-1
     )
     if DFT_DF:
-        mf = neo.CDFT(mol, df_ee=True, auxbasis_e=QM_NUC_BASIS)
+        mf = neo.CDFT(mol, df_ee=True, auxbasis_e=QM_E_BASIS_AUX)
     else:
         mf = neo.CDFT(mol)
     mf.mf_elec.xc = DFT_E_XC
