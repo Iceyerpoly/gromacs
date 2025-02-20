@@ -281,10 +281,10 @@ def qmCalc_cneo(qmatoms, qmnucindex):
         spin=QM_MULT-1
     )
     if DFT_DF:
-        mf = neo.CDFT(mol, df_ee=True, auxbasis_e=QM_E_BASIS_AUX)
+        mf = neo.CDFT(mol, xc=DFT_E_XC, df_ee=True, auxbasis_e=QM_E_BASIS_AUX)
     else:
-        mf = neo.CDFT(mol)
-    mf.mf_elec.xc = DFT_E_XC
+        mf = neo.CDFT(mol, xc=DFT_E_XC)
+    # mf.mf_elec.xc = DFT_E_XC
 
     energy = mf.kernel()
 
@@ -330,13 +330,13 @@ def qmmmCalc_cneo(qmatoms, mmcoords, mmcharges, mmradii, qmnucindex):
         spin=QM_MULT-1
     )
     # energy
-    print("mol_neo quantum_nuc", mol_neo.quantum_nuc)
+    print("mol_neo quantum_nuc", mol_neo._quantum_nuc)
     # print(qmatoms)
     if DFT_DF:
-        mf = neo.CDFT(mol_neo, df_ee=True, auxbasis_e=QM_E_BASIS_AUX)
+        mf = neo.CDFT(mol_neo, xc=DFT_E_XC, df_ee=True, auxbasis_e=QM_E_BASIS_AUX)
     else:
-        mf = neo.CDFT(mol_neo)
-    mf.mf_elec.xc = DFT_E_XC
+        mf = neo.CDFT(mol_neo, xc=DFT_E_XC)
+    # mf.mf_elec.xc = DFT_E_XC
     energy = mf.kernel()
     te = time.time()
     print(f"time for energy = {te - t0} seconds")
