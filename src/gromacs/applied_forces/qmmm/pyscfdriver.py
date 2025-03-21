@@ -16,7 +16,9 @@ import dftbplus
 SYSTEM_CHARGE = 0
 QM_CHARGE = -1
 QM_MULT = 1
-QM_METHOD = 'cneo' # select from {'cneo', 'dft'}
+QM_METHOD = 'cneo'
+# select from {'cneo', 'dft', 'export': for export qm and mm xyz files }
+# export options: uses EXPORT_QM_FNAME and EXPORT_MM_FNAME to specify the output file names, optional
 QM_E_BASIS = 'aug-cc-pvdz'
 DFT_E_XC = 'B3LYP'
 QM_NUC_BASIS = 'pb4d'
@@ -26,6 +28,7 @@ DFT_DF = True
 QM_E_BASIS_AUX = 'aug-cc-pvdz-ri'
 MM_CHARGE_MODEL = 'point' # select from {'point', 'gaussian'}
 QMMM_CUT = 10 # Angstrom
+
 
 LINK_CHARGE_CORR_METHOD = 'global' # select from {'global', 'local', 'delete'}
 LINK_MMHOST_NEIGHBOR_RANGE = 1.7
@@ -201,6 +204,12 @@ def qmmmCalc(
                 f.write(str(len(qmatoms))+"\nfake QM xyz\n")
                 for i in range(len(qmatoms)):
                     f.write(f"{qmatoms[i][0]} {0.0} {0.0} {0.0}\n")
+    elif QM_METHOD.upper() == 'EXPORT':
+        try:
+            qmCalc_export(qmatoms, mmkinds_incut, mmcoords_incut, mmcharges_incut,
+                          export_qm_fname=EXPORT_QM_FNAME, export_mm_fname=EXPORT_MM_FNAME)
+        except:
+            qmCalc_export(qmatoms, mmkinds_incut, mmcoords_incut, mmcharges_incut)
         [energy, qmforces, mmforces_incut] = qmmmCalc_dftb(
             qmcoords_link, mmcoords_incut, mmcharges_incut)
 
@@ -452,6 +461,18 @@ def prop_print_xzy(xyzpropname, index, kinds, xyzprops):
             "%4s %4s %18.12f %18.12f %18.12f"
             % (index[i], kinds[i], xyzprops[i][0], xyzprops[i][1], xyzprops[i][2])
         )
+
+def qmCalc_export(qmatoms, mmkinds, mmcoords, mmcharges,
+                  export_qm_fname='qm.xyz', export_mm_fname='mm.xyz', **kwargs):
+    # later to add export file type selection {gro, xyz, pdb, ...}
+    fqm = open(export_qm_fname, 'w')
+    fqm.write(str(len(qmatoms))+f"\nqm symbol {'x':14s}{'y':14s}{'z':14s}\n")
+    for i in range(len(qmatoms)):
+        fqm.write(f"{qmatoms[i][0]:4s} {qmatoms[i][1]:14.8f} {qmatoms[i][2]:14.8f} {qmatoms[i][3]:14.8f}\n")
+    fmm = open(export_mm_fname, 'w')
+    fmm.write(str(len(mmcoords))+f"\nmm symbol {'x':14s}{'y':14s}{'z':14s}{'charge':9s}\n")
+    for i in range(len(mmcoords)):
+        fmm.write(f"{mmkinds[i]:4s} {mmcoords[i][0]:14.8f} {mmcoords[i][1]:14.8f} {mmcoords[i][2]:14.8f} {mmcharges[i]:9.4f}\n")
 
 
 def link_coord_corr(
