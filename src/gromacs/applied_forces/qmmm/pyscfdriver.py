@@ -25,10 +25,10 @@ QM_NUC_BASIS = 'pb4d'
 QM_NUC_SELECT = 'all' # select from {'all', 'custom'}
 QM_NUC_INDEX = []
 DFT_DF = True
+DFT_DF_NE = True
 QM_E_BASIS_AUX = 'aug-cc-pvdz-ri'
 MM_CHARGE_MODEL = 'point' # select from {'point', 'gaussian'}
 QMMM_CUT = 10 # Angstrom
-
 
 LINK_CHARGE_CORR_METHOD = 'global' # select from {'global', 'local', 'delete'}
 LINK_MMHOST_NEIGHBOR_RANGE = 1.7
@@ -40,7 +40,8 @@ LINK_PRINT_FORCE_CORR = False
 LINK_PRINT_CHARGE_CORR = False
 QMMM_PRINT = False
 QM_XYZ = False
-
+EXPORT_QM_FNAME = 'qm.xyz'
+EXPORT_MM_FNAME = 'mm.xyz'
 
 def print_memory_usage(step, point):
     # CPU memory
@@ -290,7 +291,10 @@ def qmCalc_cneo(qmatoms, qmnucindex):
         spin=QM_MULT-1
     )
     if DFT_DF:
-        mf = neo.CDFT(mol, xc=DFT_E_XC, df_ee=True, auxbasis_e=QM_E_BASIS_AUX)
+        if DFT_DF_NE:
+            mf = neo.CDFT(mol, xc=DFT_E_XC).density_fit(auxbasis=QM_E_BASIS_AUX, df_ne=True)
+        else:
+            mf = neo.CDFT(mol, xc=DFT_E_XC).density_fit(auxbasis=QM_E_BASIS_AUX)
     else:
         mf = neo.CDFT(mol, xc=DFT_E_XC)
     # mf.mf_elec.xc = DFT_E_XC
@@ -342,7 +346,10 @@ def qmmmCalc_cneo(qmatoms, mmcoords, mmcharges, mmradii, qmnucindex):
     print("mol_neo quantum_nuc", mol_neo._quantum_nuc)
     # print(qmatoms)
     if DFT_DF:
-        mf = neo.CDFT(mol_neo, xc=DFT_E_XC, df_ee=True, auxbasis_e=QM_E_BASIS_AUX)
+        if DFT_DF_NE:
+            mf = neo.CDFT(mol_neo, xc=DFT_E_XC).density_fit(auxbasis=QM_E_BASIS_AUX, df_ne=True)
+        else:
+            mf = neo.CDFT(mol_neo, xc=DFT_E_XC).density_fit(auxbasis=QM_E_BASIS_AUX)
     else:
         mf = neo.CDFT(mol_neo, xc=DFT_E_XC)
     # mf.mf_elec.xc = DFT_E_XC
@@ -355,13 +362,13 @@ def qmmmCalc_cneo(qmatoms, mmcoords, mmcharges, mmradii, qmnucindex):
     g_qm = g.grad()
     qmforces = -g_qm
     tqf = time.time()
-    # print(f"time for qm force = {tqf - te} seconds")
+    print(f"time for qm force = {tqf - te} seconds")
 
     # mm gradient
     g_mm = g.grad_mm()
     mmforces = -g_mm
     tmf = time.time()
-    # print(f"time for mm force = {tmf - tqf} seconds")
+    print(f"time for mm force = {tmf - tqf} seconds")
 
     return energy, qmforces, mmforces
 
